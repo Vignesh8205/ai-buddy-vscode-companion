@@ -1,0 +1,140 @@
+{
+  "name": "ai-buddy",
+  "displayName": "AI Buddy – Your Intelligent VS Code Companion",
+  "description": "Cute, animated human-like AI companion with voice interaction and Tanglish support for VS Code.",
+  "version": "0.1.0",
+  "publisher": "ai-buddy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vignesh8205/ai-buddy-vscode-companion.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:aiBuddy.characterView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-buddy-sidebar",
+          "title": "AI Buddy",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-buddy-sidebar": [
+        {
+          "type": "webview",
+          "id": "aiBuddy.characterView",
+          "name": "AI Buddy Companion"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiBuddy.setApiKey",
+        "title": "AI Buddy: Set Gemini API Key"
+      },
+      {
+        "command": "aiBuddy.toggleVoice",
+        "title": "AI Buddy: Switch Voice (Female / Male)"
+      },
+      {
+        "command": "aiBuddy.analyzeWorkspace",
+        "title": "AI Buddy: Analyze Workspace & Activity"
+      },
+      {
+        "command": "aiBuddy.explainError",
+        "title": "AI Buddy: Explain Current Errors"
+      },
+      {
+        "command": "aiBuddy.tellJoke",
+        "title": "AI Buddy: Tell a Programmer Joke"
+      },
+      {
+        "command": "aiBuddy.resetSession",
+        "title": "AI Buddy: Reset Conversation History"
+      }
+    ],
+    "configuration": {
+      "title": "AI Buddy",
+      "properties": {
+        "aiBuddy.voiceGender": {
+          "type": "string",
+          "enum": ["female", "male"],
+          "default": "female",
+          "description": "Default character voice personality"
+        },
+        "aiBuddy.geminiModel": {
+          "type": "string",
+          "default": "gemini-1.5-flash",
+          "description": "Google Gemini model to use"
+        },
+        "aiBuddy.quietMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Quiet mode (visual expressions and text only, no speech audio)"
+        },
+        "aiBuddy.conversationFrequency": {
+          "type": "string",
+          "enum": ["high", "medium", "low", "off"],
+          "default": "medium",
+          "description": "Frequency of proactive companion remarks and coding tips"
+        },
+        "aiBuddy.proactiveHumor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable witty jokes and friendly teasing"
+        },
+        "aiBuddy.monitoring.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic workspace monitoring"
+        },
+        "aiBuddy.monitoring.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Monitor and react to active file diagnostics and errors"
+        },
+        "aiBuddy.monitoring.gitInfo": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include current Git branch in project summary"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build:extension": "node build.js --target=extension",
+    "build:webview": "node build.js --target=webview",
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "compile": "tsc -p ./ --noEmit",
+    "test": "node --test test/phase1.test.mjs test/phase2.test.mjs test/phase3.test.mjs",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.80.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.5"
+  }
+}
