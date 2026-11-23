@@ -119,6 +119,69 @@ export class SpeechService {
     }
   }
 
+  private audioContext: AudioContext | null = null;
+  private currentAudioSource: AudioBufferSourceNode | null = null;
+
+  public async playPcmAudio(
+    base64Data: string,
+    sampleRate = 24000,
+    onStart: () => void,
+    onMouthViseme: (open: boolean) => void,
+    onEnd: () => void
+  ): Promise<boolean> {
+    try {
+      this.stopSpeaking();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return false;
+
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx({ sampleRate });
+      } else if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      const binaryString = atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const int16 = new Int16Array(bytes.buffer);
+      const buffer = this.audioContext.createBuffer(1, int16.length, sampleRate);
+      const channelData = buffer.getChannelData(0);
+      for (let i = 0; i < int16.length; i++) {
+        channelData[i] = int16[i] / 32768.0;
+      }
+
+      const source = this.audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.audioContext.destination);
+
+      this.currentAudioSource = source;
+      this.isSpeaking = true;
+      onStart();
+
+      let mouthOpen = false;
+      this.mouthAnimInterval = setInterval(() => {
+        mouthOpen = !mouthOpen;
+        onMouthViseme(mouthOpen);
+      }, 150);
+
+      source.onended = () => {
+        this.currentAudioSource = null;
+        this.cleanupSpeech(onEnd, onMouthViseme);
+      };
+
+      source.start(0);
+      return true;
+    } catch (e) {
+      console.warn('PCM audio playback failed, falling back to local speech:', e);
+      this.cleanupSpeech(onEnd, onMouthViseme);
+      return false;
+    }
+  }
+
   public speak(
     text: string,
     gender: VoiceGender,
@@ -153,33 +216,52 @@ export class SpeechService {
 
     const availableVoices = this.voices.length > 0 ? this.voices : window.speechSynthesis.getVoices();
 
-    if (gender === 'female') {
+    // Search for Indian English or Tamil voices first
+    const indianVoice = availableVoices.find(
+      v =>
+        v.lang === 'ta-IN' ||
+        v.lang === 'en-IN' ||
+        v.name.includes('India') ||
+        v.name.includes('Ravi') ||
+        v.name.includes('Heera') ||
+        v.name.includes('Kalpana') ||
+        v.name.includes('Valluvar')
+    );
+
+    const isVadivelu = gender === 'vadivelu';
+    const isSanthanam = gender === 'santhanam';
+    const isSmallBoy = gender === 'small_boy';
+
+    if (isSmallBoy) {
+      // Small boy: Cute high pitch, energetic, fast
+      utterance.pitch = 1.55;
+      utterance.rate = 1.15;
+      if (indianVoice) utterance.voice = indianVoice;
+    } else if (isVadivelu) {
+      // Vadivelu: High comedic pitch inflections, expressive cadence
+      utterance.pitch = 1.35;
+      utterance.rate = 1.1;
+      if (indianVoice) utterance.voice = indianVoice;
+    } else if (isSanthanam) {
+      // Santhanam: Fast counters, crisp, witty, deadpan
+      utterance.pitch = 0.92;
+      utterance.rate = 1.22;
+      if (indianVoice) utterance.voice = indianVoice;
+    } else {
+      // Maya: Warm, sweet female tone
+      utterance.pitch = 1.25;
+      utterance.rate = 1.05;
       const femaleVoice = availableVoices.find(
         v =>
-          (v.name.includes('Female') ||
+          (v.name.includes('Heera') ||
+            v.name.includes('Female') ||
             v.name.includes('Zira') ||
-            v.name.includes('Heera') ||
             v.name.includes('Samantha') ||
-            v.name.includes('Victoria') ||
             v.name.includes('Jenny')) &&
           (v.lang.startsWith('en') || v.lang.startsWith('ta'))
       );
       if (femaleVoice) utterance.voice = femaleVoice;
-      utterance.pitch = 1.2;
-      utterance.rate = 1.05;
-    } else {
-      const maleVoice = availableVoices.find(
-        v =>
-          (v.name.includes('Male') ||
-            v.name.includes('David') ||
-            v.name.includes('Ravi') ||
-            v.name.includes('Guy') ||
-            v.name.includes('George')) &&
-          (v.lang.startsWith('en') || v.lang.startsWith('ta'))
-      );
-      if (maleVoice) utterance.voice = maleVoice;
-      utterance.pitch = 0.95;
-      utterance.rate = 1.0;
+      else if (indianVoice) utterance.voice = indianVoice;
     }
 
     utterance.onstart = () => {
@@ -218,6 +300,12 @@ export class SpeechService {
   }
 
   public stopSpeaking() {
+    if (this.currentAudioSource) {
+      try {
+        this.currentAudioSource.stop();
+      } catch (e) {}
+      this.currentAudioSource = null;
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }

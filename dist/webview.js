@@ -7409,6 +7409,53 @@
         this.isListening = false;
       }
     }
+    audioContext = null;
+    currentAudioSource = null;
+    async playPcmAudio(base64Data, sampleRate = 24e3, onStart, onMouthViseme, onEnd) {
+      try {
+        this.stopSpeaking();
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return false;
+        if (!this.audioContext || this.audioContext.state === "closed") {
+          this.audioContext = new AudioCtx({ sampleRate });
+        } else if (this.audioContext.state === "suspended") {
+          await this.audioContext.resume();
+        }
+        const binaryString = atob(base64Data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const int16 = new Int16Array(bytes.buffer);
+        const buffer = this.audioContext.createBuffer(1, int16.length, sampleRate);
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < int16.length; i++) {
+          channelData[i] = int16[i] / 32768;
+        }
+        const source = this.audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.audioContext.destination);
+        this.currentAudioSource = source;
+        this.isSpeaking = true;
+        onStart();
+        let mouthOpen = false;
+        this.mouthAnimInterval = setInterval(() => {
+          mouthOpen = !mouthOpen;
+          onMouthViseme(mouthOpen);
+        }, 150);
+        source.onended = () => {
+          this.currentAudioSource = null;
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        };
+        source.start(0);
+        return true;
+      } catch (e) {
+        console.warn("PCM audio playback failed, falling back to local speech:", e);
+        this.cleanupSpeech(onEnd, onMouthViseme);
+        return false;
+      }
+    }
     speak(text, gender, onStart, onMouthViseme, onEnd) {
       if (!("speechSynthesis" in window)) {
         console.warn("SpeechSynthesis not available");
@@ -7425,20 +7472,32 @@
       this.currentUtterance = utterance;
       window.__aiBuddyUtterance = utterance;
       const availableVoices = this.voices.length > 0 ? this.voices : window.speechSynthesis.getVoices();
-      if (gender === "female") {
+      const indianVoice = availableVoices.find(
+        (v) => v.lang === "ta-IN" || v.lang === "en-IN" || v.name.includes("India") || v.name.includes("Ravi") || v.name.includes("Heera") || v.name.includes("Kalpana") || v.name.includes("Valluvar")
+      );
+      const isVadivelu = gender === "vadivelu";
+      const isSanthanam = gender === "santhanam";
+      const isSmallBoy = gender === "small_boy";
+      if (isSmallBoy) {
+        utterance.pitch = 1.55;
+        utterance.rate = 1.15;
+        if (indianVoice) utterance.voice = indianVoice;
+      } else if (isVadivelu) {
+        utterance.pitch = 1.35;
+        utterance.rate = 1.1;
+        if (indianVoice) utterance.voice = indianVoice;
+      } else if (isSanthanam) {
+        utterance.pitch = 0.92;
+        utterance.rate = 1.22;
+        if (indianVoice) utterance.voice = indianVoice;
+      } else {
+        utterance.pitch = 1.25;
+        utterance.rate = 1.05;
         const femaleVoice = availableVoices.find(
-          (v) => (v.name.includes("Female") || v.name.includes("Zira") || v.name.includes("Heera") || v.name.includes("Samantha") || v.name.includes("Victoria") || v.name.includes("Jenny")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
+          (v) => (v.name.includes("Heera") || v.name.includes("Female") || v.name.includes("Zira") || v.name.includes("Samantha") || v.name.includes("Jenny")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
         );
         if (femaleVoice) utterance.voice = femaleVoice;
-        utterance.pitch = 1.2;
-        utterance.rate = 1.05;
-      } else {
-        const maleVoice = availableVoices.find(
-          (v) => (v.name.includes("Male") || v.name.includes("David") || v.name.includes("Ravi") || v.name.includes("Guy") || v.name.includes("George")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
-        );
-        if (maleVoice) utterance.voice = maleVoice;
-        utterance.pitch = 0.95;
-        utterance.rate = 1;
+        else if (indianVoice) utterance.voice = indianVoice;
       }
       utterance.onstart = () => {
         this.isSpeaking = true;
@@ -7470,6 +7529,13 @@
       onEnd();
     }
     stopSpeaking() {
+      if (this.currentAudioSource) {
+        try {
+          this.currentAudioSource.stop();
+        } catch (e) {
+        }
+        this.currentAudioSource = null;
+      }
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -7741,6 +7807,25 @@
             ),
             /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CharacterEyes, { state, isBlinking }),
             /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("circle", { cx: "100", cy: "99", r: "1.5", fill: "#FB923C", opacity: "0.6" }),
+            gender === "vadivelu" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              "path",
+              {
+                d: "M 86 107 Q 93 103 100 106 Q 107 103 114 107 Q 116 111 109 110 Q 100 108 91 110 Z",
+                fill: "#1E293B"
+              }
+            ),
+            gender === "santhanam" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("g", { className: "shades", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("rect", { x: "66", y: "80", width: "27", height: "16", rx: "4", fill: "#0F172A", opacity: "0.88", stroke: "#38BDF8", strokeWidth: "1.5" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("rect", { x: "107", y: "80", width: "27", height: "16", rx: "4", fill: "#0F172A", opacity: "0.88", stroke: "#38BDF8", strokeWidth: "1.5" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("line", { x1: "93", y1: "88", x2: "107", y2: "88", stroke: "#38BDF8", strokeWidth: "1.5" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("line", { x1: "72", y1: "83", x2: "80", y2: "92", stroke: "#FFFFFF", strokeWidth: "1.5", opacity: "0.4", strokeLinecap: "round" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("line", { x1: "113", y1: "83", x2: "121", y2: "92", stroke: "#FFFFFF", strokeWidth: "1.5", opacity: "0.4", strokeLinecap: "round" })
+            ] }),
+            gender === "small_boy" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("g", { className: "boy-cap", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M 58 58 Q 100 32 142 58 L 148 68 Q 100 60 52 68 Z", fill: "#F59E0B", stroke: "#D97706", strokeWidth: "1.5" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M 50 68 Q 36 70 30 65 Q 40 60 54 62 Z", fill: "#EF4444", stroke: "#DC2626", strokeWidth: "1" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("circle", { cx: "100", cy: "38", r: "4", fill: "#EF4444" })
+            ] }),
             /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CharacterMouth, { state, isMouthOpen }),
             gender === "female" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("g", { className: "hair-female", children: [
               /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
@@ -8179,26 +8264,52 @@
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "button",
         {
-          className: `voice-choice-btn ${gender === "female" ? "active female" : ""}`,
-          onClick: () => onSelect("female"),
-          title: "Maya: Cute, energetic & funny female companion",
+          className: `voice-choice-btn ${gender === "small_boy" ? "active small_boy" : ""}`,
+          onClick: () => onSelect("small_boy"),
+          title: "Small Boy (Chotu): Cute, energetic, playful kid voice!",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F469}" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Maya" }),
-            gender === "female" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 12, className: "active-sparkle" })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F466}" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Small Boy" }),
+            gender === "small_boy" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 11, className: "active-sparkle" })
           ]
         }
       ),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "button",
         {
-          className: `voice-choice-btn ${gender === "male" ? "active male" : ""}`,
-          onClick: () => onSelect("male"),
-          title: "Vikram: Friendly, witty & energetic male companion",
+          className: `voice-choice-btn ${gender === "vadivelu" || gender === "male" ? "active vadivelu" : ""}`,
+          onClick: () => onSelect("vadivelu"),
+          title: "Vadivelu: Vaigai Puyal comedy king & iconic punchlines!",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F468}" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Vikram" }),
-            gender === "male" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 12, className: "active-sparkle" })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F3AD}" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Vadivelu" }),
+            (gender === "vadivelu" || gender === "male") && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 11, className: "active-sparkle" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        "button",
+        {
+          className: `voice-choice-btn ${gender === "santhanam" ? "active santhanam" : ""}`,
+          onClick: () => onSelect("santhanam"),
+          title: "Santhanam: Fast counters & sarcastic comedy pair programmer!",
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F60E}" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Santhanam" }),
+            gender === "santhanam" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 11, className: "active-sparkle" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        "button",
+        {
+          className: `voice-choice-btn ${gender === "maya" || gender === "female" ? "active maya" : ""}`,
+          onClick: () => onSelect("maya"),
+          title: "Maya: Sweet, warm & friendly companion voice",
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-avatar", children: "\u{1F338}" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "voice-label", children: "Maya" }),
+            (gender === "maya" || gender === "female") && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Sparkles, { size: 11, className: "active-sparkle" })
           ]
         }
       )
@@ -8337,7 +8448,7 @@
         setInputText("");
       }
     };
-    const companionName = gender === "female" ? "Maya" : "Vikram";
+    const companionName = gender === "small_boy" ? "Chotu" : gender === "vadivelu" ? "Vadivelu" : gender === "santhanam" ? "Santhanam" : "Maya";
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "voice-controls-panel", children: [
       /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "chat-input-bar", children: [
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
@@ -8645,17 +8756,28 @@
               }
             ]);
             if (!quietMode && speechServiceRef.current) {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                () => setIsSpeaking(true),
-                (open) => setIsMouthOpen(open),
-                () => {
-                  setIsSpeaking(false);
-                  setIsMouthOpen(false);
-                  setCharacterState("idle");
-                }
-              );
+              const onStart = () => setIsSpeaking(true);
+              const onViseme = (open) => setIsMouthOpen(open);
+              const onEnd = () => {
+                setIsSpeaking(false);
+                setIsMouthOpen(false);
+                setCharacterState("idle");
+              };
+              if (message.audioData) {
+                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
+                  if (!ok && speechServiceRef.current) {
+                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                  }
+                });
+              } else {
+                speechServiceRef.current.speak(
+                  message.text,
+                  message.voiceGender || voiceGender,
+                  onStart,
+                  onViseme,
+                  onEnd
+                );
+              }
             } else {
               setTimeout(() => setCharacterState("idle"), 3500);
             }
@@ -8676,17 +8798,28 @@
               }
             ]);
             if (!quietMode && speechServiceRef.current) {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                () => setIsSpeaking(true),
-                (open) => setIsMouthOpen(open),
-                () => {
-                  setIsSpeaking(false);
-                  setIsMouthOpen(false);
-                  setCharacterState("idle");
-                }
-              );
+              const onStart = () => setIsSpeaking(true);
+              const onViseme = (open) => setIsMouthOpen(open);
+              const onEnd = () => {
+                setIsSpeaking(false);
+                setIsMouthOpen(false);
+                setCharacterState("idle");
+              };
+              if (message.audioData) {
+                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
+                  if (!ok && speechServiceRef.current) {
+                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                  }
+                });
+              } else {
+                speechServiceRef.current.speak(
+                  message.text,
+                  message.voiceGender || voiceGender,
+                  onStart,
+                  onViseme,
+                  onEnd
+                );
+              }
             } else {
               setTimeout(() => setCharacterState("idle"), 4e3);
             }
@@ -8706,17 +8839,28 @@
               }
             ]);
             if (!quietMode && speechServiceRef.current) {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                () => setIsSpeaking(true),
-                (open) => setIsMouthOpen(open),
-                () => {
-                  setIsSpeaking(false);
-                  setIsMouthOpen(false);
-                  setCharacterState("idle");
-                }
-              );
+              const onStart = () => setIsSpeaking(true);
+              const onViseme = (open) => setIsMouthOpen(open);
+              const onEnd = () => {
+                setIsSpeaking(false);
+                setIsMouthOpen(false);
+                setCharacterState("idle");
+              };
+              if (message.audioData) {
+                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
+                  if (!ok && speechServiceRef.current) {
+                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                  }
+                });
+              } else {
+                speechServiceRef.current.speak(
+                  message.text,
+                  message.voiceGender || voiceGender,
+                  onStart,
+                  onViseme,
+                  onEnd
+                );
+              }
             }
             break;
           }

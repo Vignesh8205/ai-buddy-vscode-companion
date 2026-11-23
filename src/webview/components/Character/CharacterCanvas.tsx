@@ -154,6 +154,34 @@ export const CharacterCanvas: React.FC<CharacterCanvasProps> = ({
         {/* Cute Small Nose */}
         <circle cx="100" cy="99" r="1.5" fill="#FB923C" opacity="0.6" />
 
+        {/* Vadivelu Iconic Comedy Mustache */}
+        {gender === 'vadivelu' && (
+          <path
+            d="M 86 107 Q 93 103 100 106 Q 107 103 114 107 Q 116 111 109 110 Q 100 108 91 110 Z"
+            fill="#1E293B"
+          />
+        )}
+
+        {/* Santhanam Cool Glasses / Shades */}
+        {gender === 'santhanam' && (
+          <g className="shades">
+            <rect x="66" y="80" width="27" height="16" rx="4" fill="#0F172A" opacity="0.88" stroke="#38BDF8" strokeWidth="1.5" />
+            <rect x="107" y="80" width="27" height="16" rx="4" fill="#0F172A" opacity="0.88" stroke="#38BDF8" strokeWidth="1.5" />
+            <line x1="93" y1="88" x2="107" y2="88" stroke="#38BDF8" strokeWidth="1.5" />
+            <line x1="72" y1="83" x2="80" y2="92" stroke="#FFFFFF" strokeWidth="1.5" opacity="0.4" strokeLinecap="round" />
+            <line x1="113" y1="83" x2="121" y2="92" stroke="#FFFFFF" strokeWidth="1.5" opacity="0.4" strokeLinecap="round" />
+          </g>
+        )}
+
+        {/* Small Boy Cute Cap */}
+        {gender === 'small_boy' && (
+          <g className="boy-cap">
+            <path d="M 58 58 Q 100 32 142 58 L 148 68 Q 100 60 52 68 Z" fill="#F59E0B" stroke="#D97706" strokeWidth="1.5" />
+            <path d="M 50 68 Q 36 70 30 65 Q 40 60 54 62 Z" fill="#EF4444" stroke="#DC2626" strokeWidth="1" />
+            <circle cx="100" cy="38" r="4" fill="#EF4444" />
+          </g>
+        )}
+
         {/* Mouth Component */}
         <CharacterMouth state={state} isMouthOpen={isMouthOpen} />
 

@@ -9,7 +9,8 @@ export type CharacterState =
   | 'surprised'
   | 'sad';
 
-export type VoiceGender = 'female' | 'male';
+export type VoicePersona = 'small_boy' | 'vadivelu' | 'santhanam' | 'maya';
+export type VoiceGender = VoicePersona | 'female' | 'male';
 
 export type ProactiveFrequency = 'high' | 'medium' | 'low' | 'off';
 
@@ -89,6 +90,7 @@ export type HostToWebviewMessage =
       text: string;
       emotion: CharacterState;
       voiceGender: VoiceGender;
+      audioData?: string;
     }
   | {
       type: 'proactiveSpeech';
@@ -96,6 +98,7 @@ export type HostToWebviewMessage =
       emotion: CharacterState;
       voiceGender: VoiceGender;
       category: string;
+      audioData?: string;
     }
   | { type: 'thinking' }
   | { type: 'apiKeyStatus'; hasKey: boolean }
@@ -107,5 +110,6 @@ export type HostToWebviewMessage =
       text: string;
       emotion: CharacterState;
       voiceGender: VoiceGender;
+      audioData?: string;
     }
   | { type: 'error'; message: string };

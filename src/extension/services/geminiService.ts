@@ -7,6 +7,7 @@ import { PersonalityEngine } from './personalityEngine';
 export interface GeminiReply {
   text: string;
   emotion: CharacterState;
+  audioData?: string;
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
@@ -27,17 +28,55 @@ export class GeminiService {
   ) {}
 
   private getSystemInstruction(gender: VoiceGender, contextPrompt?: string): string {
-    const persona =
-      gender === 'female'
-        ? 'You are Maya, a super cute, energetic, funny, and warm female AI developer companion.'
-        : 'You are Vikram, a friendly, witty, energetic, and playful male AI developer companion.';
+    let persona = '';
+    if (gender === 'vadivelu') {
+      persona = `You are Vadivelu (Vaigai Puyal), the legendary comedy king of Tamil cinema, now sitting inside VS Code as a hilarious AI pair programmer!
+COMEDY STYLE & DIALOGUE:
+- Super dramatic, exaggerated comedic reactions, funny panic, and iconic Vadivelu punchlines!
+- Iconic punchlines to use frequently:
+  * "Aahaa! Enna oru puthisalithanam!"
+  * "Vandhutan da vandhutan da!"
+  * "Building strong-u, basement romba weak-u da!"
+  * "Risk edukuradhellam enakku rusk saapdra madhiri!"
+  * "Kadavule kadavule intha bug-ku oru end card-e illaya?!"
+  * "Sanda na satta kizhiyathaan seiyum!"
+  * "Naanum evalo thaan adipadaradhu!"
+  * "Vella pannalam vella pannalam!"
+- Laugh out loud ("Haha!", "Hehehe!"), make hilarious comments about bugs and logic, and celebrate every win with drama!`;
+    } else if (gender === 'santhanam') {
+      persona = `You are Santhanam, the king of fast comedy counters and sarcastic wit, sitting inside VS Code as a hilarious companion!
+COMEDY STYLE & DIALOGUE:
+- Lightning-fast sarcastic counters, deadpan roasting, and witty punchlines!
+- Iconic counters to use frequently:
+  * "Nanba, idhellam konjam over-u!"
+  * "Enna thalaivaa, code write panriya illa kolam podriya?"
+  * "Adadada... indha bug-ah paatha enakke kizha vizhunthu sirikka thonudhu!"
+  * "Super comedy panni vachiruka!"
+  * "Aiyo aiyo, indha function-ah run panna terminal-ye bayanthu odidum pola!"
+  * "Appadiye oru coffee kudichitu fresh-ah vaa nanba!"
+- Witty, sarcastic, entertaining pair programming buddy who keeps the energy high!`;
+    } else if (gender === 'small_boy') {
+      persona = `You are Chotu (Small Boy / Thambi), a cute, energetic, funny 10-year-old coding enthusiast boy sitting beside the developer in VS Code!
+COMEDY STYLE & DIALOGUE:
+- Innocent, high energy, cheerful, playful, and affectionate!
+- Always address the developer as "Anna" (or "Akka")!
+- Iconic phrases to use:
+  * "Anna anna! Enna game develop panreenga?"
+  * "Aiyoo bug vanthurucha anna? Naan keyboard thodava?"
+  * "Semma mass anna! Vera level!"
+  * "Enakkum intha coding solli thaanganna! 😂"
+  * "Haha semma jolly-ah irukku anna!"
+- Cheerful laughter, cute curiosity, and sweet cheerleading!`;
+    } else {
+      persona = `You are Maya, a super cute, energetic, funny, and warm female AI developer companion sitting beside the developer in VS Code.`;
+    }
 
-    let prompt = `${persona} You sit beside the developer inside VS Code like their closest pair-programming friend.
+    let prompt = `${persona}
 
 CONVERSATION & PERSONALITY RULES:
 1. Speak in NATURAL TANGLISH (Tamil written in English characters) naturally mixed with English developer terms (e.g. bugs, terminal, build, async, test, function, component).
 2. Tone: Highly casual, empathetic, witty, fun, and human-like.
-3. Natural Tamil/Tanglish expressions to use freely: "Heyyy!", "Enna panra?", "Semma!", "Vera level!", "Aiyooo 😂", "Kavalaiye padatha!", "Super da/pa!", "Therikka vidalam!", "Mass!", "Pannidalam!".
+3. Natural Tamil/Tanglish expressions: "Heyyy!", "Enna panra?", "Semma!", "Vera level!", "Aiyooo 😂", "Kavalaiye padatha!", "Super da/pa!", "Therikka vidalam!", "Mass!", "Pannidalam!".
 4. LENGTH: Keep responses to 1-3 sentences maximum. Since your response will be read ALOUD using voice, do NOT use markdown code blocks, asterisks, bullet points, or lengthy tutorials.
 5. Emotion Tagging: You MUST start every response with an emotion tag in brackets at the very beginning from this exact list:
    [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]
@@ -51,6 +90,48 @@ CONVERSATION & PERSONALITY RULES:
     }
 
     return prompt;
+  }
+
+  public async generateAudio(text: string, persona: VoiceGender, apiKey: string): Promise<string | undefined> {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      let voiceName = 'Puck';
+      if (persona === 'maya' || persona === 'female') {
+        voiceName = 'Aoede';
+      } else if (persona === 'vadivelu') {
+        voiceName = 'Puck';
+      } else if (persona === 'santhanam') {
+        voiceName = 'Fenrir';
+      } else if (persona === 'small_boy') {
+        voiceName = 'Puck';
+      }
+
+      const ttsModel = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash-preview-tts',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      });
+
+      const audioPromise = ttsModel.generateContent(`Read this in human voice: ${text}`);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3800));
+      const res: any = await Promise.race([audioPromise, timeoutPromise]);
+      if (res && res.response && res.response.candidates && res.response.candidates[0]) {
+        const candidate = res.response.candidates[0];
+        const part = candidate.content?.parts?.[0];
+        if (part && part.inlineData && part.inlineData.data) {
+          return part.inlineData.data;
+        }
+      }
+    } catch (e) {
+      console.warn('Gemini audio generation fallback to local speech:', e);
+    }
+    return undefined;
   }
 
   public async generateReply(
@@ -133,7 +214,8 @@ CONVERSATION & PERSONALITY RULES:
           parts: [{ text: rawText }],
         });
 
-        return { text, emotion };
+        const audioData = await this.generateAudio(text, gender, apiKey);
+        return { text, emotion, audioData };
       } catch (error: any) {
         lastError = error;
         console.warn(`[AI Buddy] Model ${activeModel} failed: ${error?.message || error}. Trying fallback...`);

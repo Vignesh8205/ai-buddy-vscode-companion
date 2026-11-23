@@ -93,17 +93,29 @@ export const App: React.FC = () => {
 
           // Trigger speech playback if not quiet mode
           if (!quietMode && speechServiceRef.current) {
-            speechServiceRef.current.speak(
-              message.text,
-              message.voiceGender || voiceGender,
-              () => setIsSpeaking(true),
-              open => setIsMouthOpen(open),
-              () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState('idle');
-              }
-            );
+            const onStart = () => setIsSpeaking(true);
+            const onViseme = (open: boolean) => setIsMouthOpen(open);
+            const onEnd = () => {
+              setIsSpeaking(false);
+              setIsMouthOpen(false);
+              setCharacterState('idle');
+            };
+
+            if (message.audioData) {
+              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
+                if (!ok && speechServiceRef.current) {
+                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                }
+              });
+            } else {
+              speechServiceRef.current.speak(
+                message.text,
+                message.voiceGender || voiceGender,
+                onStart,
+                onViseme,
+                onEnd
+              );
+            }
           } else {
             setTimeout(() => setCharacterState('idle'), 3500);
           }
@@ -127,17 +139,29 @@ export const App: React.FC = () => {
           ]);
 
           if (!quietMode && speechServiceRef.current) {
-            speechServiceRef.current.speak(
-              message.text,
-              message.voiceGender || voiceGender,
-              () => setIsSpeaking(true),
-              open => setIsMouthOpen(open),
-              () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState('idle');
-              }
-            );
+            const onStart = () => setIsSpeaking(true);
+            const onViseme = (open: boolean) => setIsMouthOpen(open);
+            const onEnd = () => {
+              setIsSpeaking(false);
+              setIsMouthOpen(false);
+              setCharacterState('idle');
+            };
+
+            if (message.audioData) {
+              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
+                if (!ok && speechServiceRef.current) {
+                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                }
+              });
+            } else {
+              speechServiceRef.current.speak(
+                message.text,
+                message.voiceGender || voiceGender,
+                onStart,
+                onViseme,
+                onEnd
+              );
+            }
           } else {
             setTimeout(() => setCharacterState('idle'), 4000);
           }
@@ -160,17 +184,29 @@ export const App: React.FC = () => {
           ]);
 
           if (!quietMode && speechServiceRef.current) {
-            speechServiceRef.current.speak(
-              message.text,
-              message.voiceGender || voiceGender,
-              () => setIsSpeaking(true),
-              open => setIsMouthOpen(open),
-              () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState('idle');
-              }
-            );
+            const onStart = () => setIsSpeaking(true);
+            const onViseme = (open: boolean) => setIsMouthOpen(open);
+            const onEnd = () => {
+              setIsSpeaking(false);
+              setIsMouthOpen(false);
+              setCharacterState('idle');
+            };
+
+            if (message.audioData) {
+              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
+                if (!ok && speechServiceRef.current) {
+                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
+                }
+              });
+            } else {
+              speechServiceRef.current.speak(
+                message.text,
+                message.voiceGender || voiceGender,
+                onStart,
+                onViseme,
+                onEnd
+              );
+            }
           }
           break;
         }

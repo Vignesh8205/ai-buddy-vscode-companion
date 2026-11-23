@@ -88,6 +88,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
+          audioData: reply.audioData,
         });
         break;
       }
@@ -127,6 +128,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
+          audioData: reply.audioData,
         });
         break;
       }
@@ -147,6 +149,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
+          audioData: reply.audioData,
         });
         break;
       }

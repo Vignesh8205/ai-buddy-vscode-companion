@@ -54,67 +54,117 @@ export class PersonalityEngine {
     gender: VoiceGender,
     summary?: ProjectSummary
   ): { text: string; emotion: CharacterState } {
-    const isFemale = gender === 'female';
     const lower = userText.toLowerCase().trim();
+    const isVadivelu = gender === 'vadivelu';
+    const isSanthanam = gender === 'santhanam';
+    const isSmallBoy = gender === 'small_boy';
 
     // 1. Greetings
-    if (/^(hi|hello|hey|vanakkam|halo|heyyy|welcome|oi)/i.test(lower)) {
-      return {
-        text: isFemale
-          ? 'Heyyy! Super to meet you! Naan Maya, unga coding buddy! Enna project panra? Chat-la sollunga! ✨'
-          : 'Vanakkam bro! Naan Vikram! Coding-la doubts, bugs, jokes ethuvaanaalum naan irukken! Eppo start pannuvom? 🚀',
-        emotion: 'happy',
-      };
+    if (/^(hi|hello|hey|vanakkam|halo|heyyy|welcome|oi|thalaiva)/i.test(lower)) {
+      let text = 'Heyyy! Super to meet you! Naan Maya, unga cute coding buddy! ✨';
+      if (isVadivelu) {
+        text = 'Aahaa! Vandhutan da vandhutan da! Naan thaan unga Vadivelu! Enna thalaivaa, innaiku bugs-ah ellam thamsam panna poroma?! 😂';
+      } else if (isSanthanam) {
+        text = 'Nanba! Enna innaiku early-ah terminal open pannitiya? Naan Santhanam! Code write panriya illa kolam podriya?! 😂';
+      } else if (isSmallBoy) {
+        text = 'Anna anna! Naan Chotu! Enna super project panreenga? Enakkum coding solli thaanganna! ✨';
+      }
+      return { text, emotion: 'happy' };
     }
 
     // 2. Playwright / Testing
     if (/playwright|test|automation|cypress|jest|vitest|qa/i.test(lower)) {
-      return {
-        text: isFemale
-          ? 'Ohh! Automation testing ah? Super! Innaiku bugs-ah catch panna poroma? All green ticks varanum! 🔥'
-          : 'Playwright testing vera level bro! Test cases ezhudhiyaacha? Innaiku bugs ellaam odipoidum! 🧪',
-        emotion: 'happy',
-      };
+      let text = 'Ohh! Automation testing ah? Super! Innaiku bugs-ah catch panna poroma? All green ticks varanum! 🔥';
+      if (isVadivelu) {
+        text = 'Risk edukuradhellam enakku rusk saapdra madhiri! Playwright test-ah run pannu thalaivaa, paathukalam! 😂';
+      } else if (isSanthanam) {
+        text = 'Playwright test run aagudha? Inga paaru nanba, timeout error aana mattum en kitta varatha, coffee kudichitu vaa! 😂';
+      } else if (isSmallBoy) {
+        text = 'Anna! Ella test-um pass aagiducha? Semma mass anna! Innaiku green tick party thaan! 🧪';
+      }
+      return { text, emotion: 'happy' };
     }
 
     // 3. Joke request
     if (/joke|comedy|sirippu|funny|laugh/i.test(lower)) {
+      if (isVadivelu) {
+        return {
+          text: 'Building strong-u, basement romba weak-u! Adhuku thaan intha infinite loop exit condition-e illama suthithu da! 😂',
+          emotion: 'laughing',
+        };
+      } else if (isSanthanam) {
+        return {
+          text: 'Indha function-ah paatha enakke kizha vizhunthu sirikka thonuthu! Semma comedy panni vachiruka nanba! 😂',
+          emotion: 'laughing',
+        };
+      } else if (isSmallBoy) {
+        return {
+          text: 'Anna, light-ah paatha bugs varum la, adhunaala thaan dark mode use panreengala? Semma brain anna ungalukku! 😂',
+          emotion: 'laughing',
+        };
+      }
       return this.getRandomJoke();
     }
 
     // 4. How are you / Status
     if (/how are you|eppadi irukka|nalama|fine/i.test(lower)) {
-      return {
-        text: isFemale
-          ? 'Naan full energetic-ah irukken! Unga code-la zero bugs paatha innum jolly-ah iruppen! 😄'
-          : 'Semma jolly-ah irukken bro! Innaiku target features ellam mudichiduvoma? 💪',
-        emotion: 'happy',
-      };
+      let text = 'Naan full energetic-ah irukken! Unga code-la zero bugs paatha innum jolly-ah iruppen! 😄';
+      if (isVadivelu) {
+        text = 'Naan eppavume jolly thaan thalaivaa! Aana intha terminal error paatha thaan konjam heart beat adhigam aagudhu! 😂';
+      } else if (isSanthanam) {
+        text = 'Naan super-ah irukken nanba! Nee thaan terminal-ah paathu shock aagi ukkaanthirukka pola! 😂';
+      } else if (isSmallBoy) {
+        text = 'Naan semma jolly-ah irukken anna! Innaiku unga kooda coding panna ready! 🚀';
+      }
+      return { text, emotion: 'happy' };
     }
 
     // 5. Who are you
     if (/who are you|yaar nee|un per|your name|intro/i.test(lower)) {
-      return {
-        text: isFemale
-          ? 'Naan Maya! Unga cute & energetic VS Code pair programmer! Jokes solluven, bugs track pannuven, jolly-ah pesuven! 💖'
-          : 'Naan Vikram! Unga witty coding companion! Workspace analyze panni helpful-ah pesuven! 🤝',
-        emotion: 'happy',
-      };
+      let text = 'Naan Maya! Unga cute & energetic VS Code pair programmer! 💖';
+      if (isVadivelu) {
+        text = 'Aahaa! Enna oru kelvi! Naan thaan unga Vaigai Puyal Vadivelu! Kodai-kodaikku comedy coding buddy! 😂';
+      } else if (isSanthanam) {
+        text = 'Naan Santhanam nanba! Counters king! Bugs vandha comedy pannuven, help venumna razor-sharp solution tharuven! 😎';
+      } else if (isSmallBoy) {
+        text = 'Naan Chotu anna! Unga thambi! Unga kooda ukkaanthu coding kathuka vandhirukken! 👦';
+      }
+      return { text, emotion: 'happy' };
     }
 
     // 6. Bug / Error / Help
     if (/error|bug|help|issue|fail|problem|stuck|fix/i.test(lower)) {
       if (summary && summary.diagnosticsSummary.errorCount > 0) {
         const top = summary.diagnosticsSummary.topErrors[0];
+        if (isVadivelu) {
+          return {
+            text: `Aiyooo kadavule! ${top.file}:${top.line}-la "${top.message.slice(0, 50)}" nu error kaatudhu! Idhuku oru end card-e illaya?! 😱`,
+            emotion: 'confused',
+          };
+        } else if (isSanthanam) {
+          return {
+            text: `Adadada! ${top.file}:${top.line}-la syntax error! Enna thalaivaa, bracket poduradhula kuda kanjathanam ah?! 😂`,
+            emotion: 'confused',
+          };
+        } else if (isSmallBoy) {
+          return {
+            text: `Aiyoo anna! ${top.file}:${top.line}-la error vanthuruchu! Naan coffee eduthu varava, relax aagi fix pannunga! 🥺`,
+            emotion: 'sad',
+          };
+        }
         return {
           text: `Aiyooo! ${top.file}:${top.line}-la "${top.message.slice(0, 70)}" error irukku. Type definition check pannalama? 🤔`,
           emotion: 'confused',
         };
       }
       return {
-        text: isFemale
-          ? 'Kavalai padadha! Bug enga irukku nu paapom! Code explain pannu, namma sernthu fix pannuvom! 🐞'
-          : 'Don\'t worry bro! Bug fix panradhu namma velai! Code snippet sollu, solution kandupidikkalam! 🛠️',
+        text: isVadivelu
+          ? 'Kadavule! Enna aachu thalaivaa? Sanda na satta kizhiyathaan seiyum! Code-ah kaatu, thamsam pannidalam! 🛠️'
+          : isSanthanam
+          ? 'Nanba, tension aagadha! Entha line-la error-nu sollu, counter attack panni fix pannuvom! ⚡'
+          : isSmallBoy
+          ? 'Anna! Kavalaiye padatheenga, namma sernthu intha bug-ah thurathi vidalam! 💪'
+          : 'Kavalai padadha! Bug enga irukku nu paapom! Code explain pannu, namma sernthu fix pannuvom! 🐞',
         emotion: 'thinking',
       };
     }
@@ -125,18 +175,26 @@ export class PersonalityEngine {
       const lang = summary?.primaryLanguage || 'Code';
       const test = summary?.testFramework ? `, Testing: ${summary.testFramework}` : '';
       return {
-        text: isFemale
-          ? `Namma current project: ${proj} (${lang}${test})! Mass-ah develop panrom! 🔥`
-          : `Project ${proj} semma setup bro! ${lang} use panrom, coding super-ah poguthu! 🚀`,
+        text: isVadivelu
+          ? `Namma project ${proj} (${lang}${test}) vera level thalaivaa! Aahaa enna oru setup! 🔥`
+          : isSanthanam
+          ? `Project ${proj} semma setup nanba! Coding speed pathu terminal-ye bayanthu odudhu! 🚀`
+          : isSmallBoy
+          ? `Anna! Namma project ${proj} semmaya irukku! Naanum intha ${lang} kathuka poren! ✨`
+          : `Namma current project: ${proj} (${lang}${test})! Mass-ah develop panrom! 🔥`,
         emotion: 'happy',
       };
     }
 
-    // 8. General conversational response with gentle API Key reminder
+    // 8. General conversational response
     return {
-      text: isFemale
-        ? `Super da! "${userText}" kettu yosikren! Nalla point! (💡 Tip: Settings icon click panni free Gemini API Key potta, deep AI reasoning kedaikkum!) ✨`
-        : `Got it bro! "${userText}" semma! Namma work semma speed-ah poguthu! (💡 Tip: Add Gemini API Key in Settings for unlimited AI coding brain!) 🚀`,
+      text: isVadivelu
+        ? `Aahaa! "${userText}" semma matter thalaivaa! Vella pannalam vella pannalam! 😂`
+        : isSanthanam
+        ? `Nanba! "${userText}" super point! Fast-ah coding mudichitu tea saapda polam! ☕`
+        : isSmallBoy
+        ? `Semma anna! "${userText}" kettu semma jolly-ah irukku! Coding continue pannunga anna! 🚀`
+        : `Super da! "${userText}" semma! Namma work semma speed-ah poguthu! ✨`,
       emotion: 'speaking',
     };
   }

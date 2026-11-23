@@ -33,7 +33,14 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
     }
   };
 
-  const companionName = gender === 'female' ? 'Maya' : 'Vikram';
+  const companionName =
+    gender === 'small_boy'
+      ? 'Chotu'
+      : gender === 'vadivelu'
+      ? 'Vadivelu'
+      : gender === 'santhanam'
+      ? 'Santhanam'
+      : 'Maya';
 
   return (
     <div className="voice-controls-panel">
