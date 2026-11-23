@@ -9,6 +9,14 @@ export interface GeminiReply {
   emotion: CharacterState;
 }
 
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+export const FALLBACK_GEMINI_MODELS = [
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+];
+
 export class GeminiService {
   private conversationHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
@@ -48,7 +56,7 @@ CONVERSATION & PERSONALITY RULES:
   public async generateReply(
     userText: string,
     gender: VoiceGender,
-    modelName = 'gemini-1.5-flash',
+    modelName = DEFAULT_GEMINI_MODEL,
     projectSummary?: ProjectSummary
   ): Promise<GeminiReply> {
     const apiKey = await this.secretStorage.getApiKey();
@@ -62,66 +70,92 @@ CONVERSATION & PERSONALITY RULES:
       };
     }
 
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const contextPrompt =
-        projectSummary && this.contextEngine
-          ? this.contextEngine.formatContextPrompt(projectSummary)
-          : undefined;
-
-      const systemInstruction = this.getSystemInstruction(gender, contextPrompt);
-      const activeModel = modelName.includes('gemini') ? modelName : 'gemini-1.5-flash';
-
-      const model = genAI.getGenerativeModel({
-        model: activeModel,
-        systemInstruction,
-        generationConfig: {
-          temperature: 0.85,
-          maxOutputTokens: 160,
-        },
-      });
-
-      // Append user turn
-      this.conversationHistory.push({
-        role: 'user',
-        parts: [{ text: userText }],
-      });
-
-      // Keep recent 12 turns for context memory
-      if (this.conversationHistory.length > 12) {
-        this.conversationHistory = this.conversationHistory.slice(-12);
-      }
-
-      const chat = model.startChat({
-        history: this.conversationHistory.slice(0, -1),
-      });
-
-      const response = await chat.sendMessage(userText);
-      const rawText = response.response.text()?.trim() || '';
-
-      const { emotion, text } = this.parseEmotionTag(rawText);
-
-      // Add model turn to history
-      this.conversationHistory.push({
-        role: 'model',
-        parts: [{ text: rawText }],
-      });
-
-      return { text, emotion };
-    } catch (error: any) {
-      console.error('Gemini API call failed:', error);
-      const errorMsg = error?.message || 'API connection issue';
-      return {
-        text: `Aiyoo! Gemini connect aagala: ${errorMsg}. API key check pannunga!`,
-        emotion: 'sad',
-      };
+    // Remap deprecated or obsolete model names (like gemini-1.5-* or gemini-2.0-*)
+    let requestedModel = modelName;
+    if (
+      !requestedModel ||
+      requestedModel.includes('1.5') ||
+      requestedModel.includes('2.0') ||
+      requestedModel.includes('2.5')
+    ) {
+      requestedModel = DEFAULT_GEMINI_MODEL;
     }
+
+    const modelsToTry = [
+      requestedModel,
+      ...FALLBACK_GEMINI_MODELS.filter((m) => m !== requestedModel),
+    ];
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const contextPrompt =
+      projectSummary && this.contextEngine
+        ? this.contextEngine.formatContextPrompt(projectSummary)
+        : undefined;
+
+    const systemInstruction = this.getSystemInstruction(gender, contextPrompt);
+
+    // Append user turn
+    this.conversationHistory.push({
+      role: 'user',
+      parts: [{ text: userText }],
+    });
+
+    // Keep recent 12 turns for context memory
+    if (this.conversationHistory.length > 12) {
+      this.conversationHistory = this.conversationHistory.slice(-12);
+    }
+
+    let lastError: any = null;
+
+    for (const activeModel of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: activeModel,
+          systemInstruction,
+          generationConfig: {
+            temperature: 0.85,
+            maxOutputTokens: 160,
+          },
+        });
+
+        const chat = model.startChat({
+          history: this.conversationHistory.slice(0, -1),
+        });
+
+        const response = await chat.sendMessage(userText);
+        const rawText = response.response.text()?.trim() || '';
+
+        const { emotion, text } = this.parseEmotionTag(rawText);
+
+        // Add model turn to history
+        this.conversationHistory.push({
+          role: 'model',
+          parts: [{ text: rawText }],
+        });
+
+        return { text, emotion };
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`[AI Buddy] Model ${activeModel} failed: ${error?.message || error}. Trying fallback...`);
+      }
+    }
+
+    console.error('All Gemini candidate models failed:', lastError);
+    if (this.personalityEngine) {
+      return this.personalityEngine.generateFallbackConversation(userText, gender, projectSummary);
+    }
+
+    const errorMsg = lastError?.message || 'API connection issue';
+    return {
+      text: `Aiyoo! Gemini connect aagala: ${errorMsg}. API key check pannunga!`,
+      emotion: 'sad',
+    };
   }
 
   public async explainCurrentError(
     summary: ProjectSummary,
     gender: VoiceGender,
-    modelName = 'gemini-1.5-flash'
+    modelName = DEFAULT_GEMINI_MODEL
   ): Promise<GeminiReply> {
     if (summary.diagnosticsSummary.errorCount === 0 || summary.diagnosticsSummary.topErrors.length === 0) {
       return {
@@ -138,7 +172,7 @@ CONVERSATION & PERSONALITY RULES:
   public async analyzeCurrentProject(
     summary: ProjectSummary,
     gender: VoiceGender,
-    modelName = 'gemini-1.5-flash'
+    modelName = DEFAULT_GEMINI_MODEL
   ): Promise<GeminiReply> {
     const prompt = `Give a friendly 1-2 sentence witty Tanglish reaction to my current project: Project is ${summary.projectName}, type is ${summary.projectType}, primary language is ${summary.primaryLanguage}, frameworks are ${summary.frameworks.join(', ') || 'none'}, active file is ${summary.activeFile?.name || 'none'}.`;
     return this.generateReply(prompt, gender, modelName, summary);

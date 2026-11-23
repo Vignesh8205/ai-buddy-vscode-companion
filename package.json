@@ -77,7 +77,7 @@
         },
         "aiBuddy.geminiModel": {
           "type": "string",
-          "default": "gemini-1.5-flash",
+          "default": "gemini-3.5-flash",
           "description": "Google Gemini model to use"
         },
         "aiBuddy.quietMode": {

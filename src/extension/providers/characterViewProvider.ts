@@ -50,7 +50,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
 
     const config = vscode.workspace.getConfiguration('aiBuddy');
     const voiceGender = config.get<VoiceGender>('voiceGender', 'female');
-    const modelName = config.get<string>('geminiModel', 'gemini-1.5-flash');
+    const modelName = config.get<string>('geminiModel', 'gemini-3.5-flash');
     const proactiveFrequency = config.get<ProactiveFrequency>('conversationFrequency', 'medium');
 
     switch (message.type) {

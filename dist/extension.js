@@ -64,7 +64,7 @@ var CharacterViewProvider = class {
     if (!this._view) return;
     const config = vscode.workspace.getConfiguration("aiBuddy");
     const voiceGender = config.get("voiceGender", "female");
-    const modelName = config.get("geminiModel", "gemini-1.5-flash");
+    const modelName = config.get("geminiModel", "gemini-3.5-flash");
     const proactiveFrequency = config.get("conversationFrequency", "medium");
     switch (message.type) {
       case "ready": {
@@ -1244,6 +1244,13 @@ var GoogleGenerativeAI = class {
 };
 
 // src/extension/services/geminiService.ts
+var DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
+var FALLBACK_GEMINI_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-flash-latest",
+  "gemini-3.8-flash"
+];
 var GeminiService = class {
   constructor(secretStorage, contextEngine, personalityEngine) {
     this.secretStorage = secretStorage;
@@ -1274,7 +1281,7 @@ When the user talks about their project, active file, or errors, use the context
     }
     return prompt;
   }
-  async generateReply(userText, gender, modelName = "gemini-1.5-flash", projectSummary) {
+  async generateReply(userText, gender, modelName = DEFAULT_GEMINI_MODEL, projectSummary) {
     const apiKey = await this.secretStorage.getApiKey();
     if (!apiKey) {
       if (this.personalityEngine) {
@@ -1285,47 +1292,62 @@ When the user talks about their project, active file, or errors, use the context
         emotion: "surprised"
       };
     }
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const contextPrompt = projectSummary && this.contextEngine ? this.contextEngine.formatContextPrompt(projectSummary) : void 0;
-      const systemInstruction = this.getSystemInstruction(gender, contextPrompt);
-      const activeModel = modelName.includes("gemini") ? modelName : "gemini-1.5-flash";
-      const model = genAI.getGenerativeModel({
-        model: activeModel,
-        systemInstruction,
-        generationConfig: {
-          temperature: 0.85,
-          maxOutputTokens: 160
-        }
-      });
-      this.conversationHistory.push({
-        role: "user",
-        parts: [{ text: userText }]
-      });
-      if (this.conversationHistory.length > 12) {
-        this.conversationHistory = this.conversationHistory.slice(-12);
-      }
-      const chat = model.startChat({
-        history: this.conversationHistory.slice(0, -1)
-      });
-      const response = await chat.sendMessage(userText);
-      const rawText = response.response.text()?.trim() || "";
-      const { emotion, text } = this.parseEmotionTag(rawText);
-      this.conversationHistory.push({
-        role: "model",
-        parts: [{ text: rawText }]
-      });
-      return { text, emotion };
-    } catch (error) {
-      console.error("Gemini API call failed:", error);
-      const errorMsg = error?.message || "API connection issue";
-      return {
-        text: `Aiyoo! Gemini connect aagala: ${errorMsg}. API key check pannunga!`,
-        emotion: "sad"
-      };
+    let requestedModel = modelName;
+    if (!requestedModel || requestedModel.includes("1.5") || requestedModel.includes("2.0") || requestedModel.includes("2.5")) {
+      requestedModel = DEFAULT_GEMINI_MODEL;
     }
+    const modelsToTry = [
+      requestedModel,
+      ...FALLBACK_GEMINI_MODELS.filter((m) => m !== requestedModel)
+    ];
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const contextPrompt = projectSummary && this.contextEngine ? this.contextEngine.formatContextPrompt(projectSummary) : void 0;
+    const systemInstruction = this.getSystemInstruction(gender, contextPrompt);
+    this.conversationHistory.push({
+      role: "user",
+      parts: [{ text: userText }]
+    });
+    if (this.conversationHistory.length > 12) {
+      this.conversationHistory = this.conversationHistory.slice(-12);
+    }
+    let lastError = null;
+    for (const activeModel of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: activeModel,
+          systemInstruction,
+          generationConfig: {
+            temperature: 0.85,
+            maxOutputTokens: 160
+          }
+        });
+        const chat = model.startChat({
+          history: this.conversationHistory.slice(0, -1)
+        });
+        const response = await chat.sendMessage(userText);
+        const rawText = response.response.text()?.trim() || "";
+        const { emotion, text } = this.parseEmotionTag(rawText);
+        this.conversationHistory.push({
+          role: "model",
+          parts: [{ text: rawText }]
+        });
+        return { text, emotion };
+      } catch (error) {
+        lastError = error;
+        console.warn(`[AI Buddy] Model ${activeModel} failed: ${error?.message || error}. Trying fallback...`);
+      }
+    }
+    console.error("All Gemini candidate models failed:", lastError);
+    if (this.personalityEngine) {
+      return this.personalityEngine.generateFallbackConversation(userText, gender, projectSummary);
+    }
+    const errorMsg = lastError?.message || "API connection issue";
+    return {
+      text: `Aiyoo! Gemini connect aagala: ${errorMsg}. API key check pannunga!`,
+      emotion: "sad"
+    };
   }
-  async explainCurrentError(summary, gender, modelName = "gemini-1.5-flash") {
+  async explainCurrentError(summary, gender, modelName = DEFAULT_GEMINI_MODEL) {
     if (summary.diagnosticsSummary.errorCount === 0 || summary.diagnosticsSummary.topErrors.length === 0) {
       return {
         text: "Semma! Un active file-la ipo entha error-um illa! Code clean-ah mass-ah irukku! \u{1F525}",
@@ -1336,7 +1358,7 @@ When the user talks about their project, active file, or errors, use the context
     const prompt = `Explain this error briefly in 1-2 sentences of friendly Tanglish with a practical hint: File: ${top.file}, Line: ${top.line}, Error: ${top.message}`;
     return this.generateReply(prompt, gender, modelName, summary);
   }
-  async analyzeCurrentProject(summary, gender, modelName = "gemini-1.5-flash") {
+  async analyzeCurrentProject(summary, gender, modelName = DEFAULT_GEMINI_MODEL) {
     const prompt = `Give a friendly 1-2 sentence witty Tanglish reaction to my current project: Project is ${summary.projectName}, type is ${summary.projectType}, primary language is ${summary.primaryLanguage}, frameworks are ${summary.frameworks.join(", ") || "none"}, active file is ${summary.activeFile?.name || "none"}.`;
     return this.generateReply(prompt, gender, modelName, summary);
   }
