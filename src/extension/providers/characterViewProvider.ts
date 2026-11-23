@@ -13,6 +13,7 @@ import { ContextEngine } from '../services/contextEngine';
 import { PersonalityEngine } from '../services/personalityEngine';
 import { ProactiveDecisionEngine } from '../services/proactiveEngine';
 import { AudioClipsService } from '../services/audioClipsService';
+import { NeuralVoiceService } from '../services/neuralVoiceService';
 
 export class CharacterViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiBuddy.characterView';
@@ -26,7 +27,8 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     private readonly _contextEngine: ContextEngine,
     private readonly _personalityEngine: PersonalityEngine,
     private readonly _proactiveEngine: ProactiveDecisionEngine,
-    private readonly _audioClipsService?: AudioClipsService
+    private readonly _audioClipsService?: AudioClipsService,
+    private readonly _neuralVoiceService?: NeuralVoiceService
   ) {}
 
   public resolveWebviewView(
@@ -62,6 +64,18 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       return this._view.webview.asWebviewUri(vscode.Uri.file(clipFile)).toString();
     }
     return this._audioClipsService.getRandomClipDataUri(persona);
+  }
+
+  private async _getAudioForText(text: string, persona: VoiceGender): Promise<string | undefined> {
+    if (this._neuralVoiceService) {
+      try {
+        const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
+        if (neuralAudio) return neuralAudio;
+      } catch (err) {
+        console.warn('[CharacterViewProvider] Neural voice synthesis error:', err);
+      }
+    }
+    return this._getAudioClipForPersona(persona);
   }
 
   private async _handleWebviewMessage(message: WebviewToHostMessage): Promise<void> {
@@ -102,13 +116,13 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           summary
         );
 
-        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = await this._getAudioForText(reply.text, voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: realClip || reply.audioData,
+          audioData: audioData || reply.audioData,
         });
         break;
       }
@@ -116,13 +130,13 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       case 'tellJoke': {
         this._proactiveEngine.recordUserActivity();
         const joke = this._personalityEngine.getRandomJoke();
-        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = await this._getAudioForText(joke.text, voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: joke.text,
           emotion: joke.emotion,
           voiceGender,
-          audioData: realClip,
+          audioData,
         });
         break;
       }
@@ -144,14 +158,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = await this._getAudioForText(reply.text, voiceGender);
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: realClip || reply.audioData,
+          audioData: audioData || reply.audioData,
         });
         break;
       }
@@ -166,14 +180,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = await this._getAudioForText(reply.text, voiceGender);
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: realClip || reply.audioData,
+          audioData: audioData || reply.audioData,
         });
         break;
       }
@@ -220,34 +234,34 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  public sendProactiveSpeech(
+  public async sendProactiveSpeech(
     text: string,
     emotion: CharacterState,
     voiceGender: VoiceGender,
     category: string
-  ): void {
-    const realClip = this._getAudioClipForPersona(voiceGender);
+  ): Promise<void> {
+    const audioData = await this._getAudioForText(text, voiceGender);
     this.postMessage({
       type: 'proactiveSpeech',
       text,
       emotion,
       voiceGender,
       category,
-      audioData: realClip,
+      audioData,
     });
   }
 
-  public sendWorkspaceAlert(text: string, emotion: CharacterState): void {
+  public async sendWorkspaceAlert(text: string, emotion: CharacterState): Promise<void> {
     const config = vscode.workspace.getConfiguration('aiBuddy');
     const voiceGender = this._currentVoiceGender || config.get<VoiceGender>('voiceGender', 'vadivelu');
-    const realClip = this._getAudioClipForPersona(voiceGender);
+    const audioData = await this._getAudioForText(text, voiceGender);
 
     this.postMessage({
       type: 'workspaceAlert',
       text,
       emotion,
       voiceGender,
-      audioData: realClip,
+      audioData,
     });
   }
 

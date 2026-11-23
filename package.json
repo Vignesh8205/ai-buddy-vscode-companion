@@ -71,7 +71,14 @@
       "properties": {
         "aiBuddy.voiceGender": {
           "type": "string",
-          "enum": ["small_boy", "vadivelu", "santhanam", "maya", "female", "male"],
+          "enum": [
+            "small_boy",
+            "vadivelu",
+            "santhanam",
+            "maya",
+            "female",
+            "male"
+          ],
           "default": "vadivelu",
           "description": "Default character voice personality (Small Boy, Vadivelu, Santhanam, Maya)"
         },
@@ -87,7 +94,12 @@
         },
         "aiBuddy.conversationFrequency": {
           "type": "string",
-          "enum": ["high", "medium", "low", "off"],
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "off"
+          ],
           "default": "medium",
           "description": "Frequency of proactive companion remarks and coding tips"
         },
@@ -126,6 +138,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "lucide-react": "^0.475.0",
+    "msedge-tts": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

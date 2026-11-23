@@ -7,6 +7,7 @@ import { WorkspaceMonitorService } from './services/workspaceMonitor';
 import { PersonalityEngine } from './services/personalityEngine';
 import { ProactiveDecisionEngine } from './services/proactiveEngine';
 import { AudioClipsService } from './services/audioClipsService';
+import { NeuralVoiceService } from './services/neuralVoiceService';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('AI Buddy activating with Proactive Personality & Humour Engine...');
@@ -23,6 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
       audioClipsService.addSearchDirectory(folder.uri.fsPath);
     }
   }
+
+  // Initialize Dynamic Neural Voice Service (msedge-tts)
+  const neuralVoiceService = new NeuralVoiceService();
 
   // Declare characterProvider reference
   let characterProvider: CharacterViewProvider;
@@ -49,7 +53,8 @@ export function activate(context: vscode.ExtensionContext) {
     contextEngine,
     personalityEngine,
     proactiveEngine,
-    audioClipsService
+    audioClipsService,
+    neuralVoiceService
   );
 
   // Initialize Workspace Monitor with debounced callbacks
