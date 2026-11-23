@@ -49,6 +49,98 @@ export class PersonalityEngine {
     return this.curatedJokes[idx];
   }
 
+  public generateFallbackConversation(
+    userText: string,
+    gender: VoiceGender,
+    summary?: ProjectSummary
+  ): { text: string; emotion: CharacterState } {
+    const isFemale = gender === 'female';
+    const lower = userText.toLowerCase().trim();
+
+    // 1. Greetings
+    if (/^(hi|hello|hey|vanakkam|halo|heyyy|welcome|oi)/i.test(lower)) {
+      return {
+        text: isFemale
+          ? 'Heyyy! Super to meet you! Naan Maya, unga coding buddy! Enna project panra? Chat-la sollunga! ✨'
+          : 'Vanakkam bro! Naan Vikram! Coding-la doubts, bugs, jokes ethuvaanaalum naan irukken! Eppo start pannuvom? 🚀',
+        emotion: 'happy',
+      };
+    }
+
+    // 2. Playwright / Testing
+    if (/playwright|test|automation|cypress|jest|vitest|qa/i.test(lower)) {
+      return {
+        text: isFemale
+          ? 'Ohh! Automation testing ah? Super! Innaiku bugs-ah catch panna poroma? All green ticks varanum! 🔥'
+          : 'Playwright testing vera level bro! Test cases ezhudhiyaacha? Innaiku bugs ellaam odipoidum! 🧪',
+        emotion: 'happy',
+      };
+    }
+
+    // 3. Joke request
+    if (/joke|comedy|sirippu|funny|laugh/i.test(lower)) {
+      return this.getRandomJoke();
+    }
+
+    // 4. How are you / Status
+    if (/how are you|eppadi irukka|nalama|fine/i.test(lower)) {
+      return {
+        text: isFemale
+          ? 'Naan full energetic-ah irukken! Unga code-la zero bugs paatha innum jolly-ah iruppen! 😄'
+          : 'Semma jolly-ah irukken bro! Innaiku target features ellam mudichiduvoma? 💪',
+        emotion: 'happy',
+      };
+    }
+
+    // 5. Who are you
+    if (/who are you|yaar nee|un per|your name|intro/i.test(lower)) {
+      return {
+        text: isFemale
+          ? 'Naan Maya! Unga cute & energetic VS Code pair programmer! Jokes solluven, bugs track pannuven, jolly-ah pesuven! 💖'
+          : 'Naan Vikram! Unga witty coding companion! Workspace analyze panni helpful-ah pesuven! 🤝',
+        emotion: 'happy',
+      };
+    }
+
+    // 6. Bug / Error / Help
+    if (/error|bug|help|issue|fail|problem|stuck|fix/i.test(lower)) {
+      if (summary && summary.diagnosticsSummary.errorCount > 0) {
+        const top = summary.diagnosticsSummary.topErrors[0];
+        return {
+          text: `Aiyooo! ${top.file}:${top.line}-la "${top.message.slice(0, 70)}" error irukku. Type definition check pannalama? 🤔`,
+          emotion: 'confused',
+        };
+      }
+      return {
+        text: isFemale
+          ? 'Kavalai padadha! Bug enga irukku nu paapom! Code explain pannu, namma sernthu fix pannuvom! 🐞'
+          : 'Don\'t worry bro! Bug fix panradhu namma velai! Code snippet sollu, solution kandupidikkalam! 🛠️',
+        emotion: 'thinking',
+      };
+    }
+
+    // 7. Project questions
+    if (/project|workspace|stack|tech|repo/i.test(lower)) {
+      const proj = summary?.projectName || 'Active Workspace';
+      const lang = summary?.primaryLanguage || 'Code';
+      const test = summary?.testFramework ? `, Testing: ${summary.testFramework}` : '';
+      return {
+        text: isFemale
+          ? `Namma current project: ${proj} (${lang}${test})! Mass-ah develop panrom! 🔥`
+          : `Project ${proj} semma setup bro! ${lang} use panrom, coding super-ah poguthu! 🚀`,
+        emotion: 'happy',
+      };
+    }
+
+    // 8. General conversational response with gentle API Key reminder
+    return {
+      text: isFemale
+        ? `Super da! "${userText}" kettu yosikren! Nalla point! (💡 Tip: Settings icon click panni free Gemini API Key potta, deep AI reasoning kedaikkum!) ✨`
+        : `Got it bro! "${userText}" semma! Namma work semma speed-ah poguthu! (💡 Tip: Add Gemini API Key in Settings for unlimited AI coding brain!) 🚀`,
+      emotion: 'speaking',
+    };
+  }
+
   public async generateProactiveMessage(
     eventType: ProactiveEventType,
     gender: VoiceGender,

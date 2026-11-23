@@ -59,12 +59,6 @@ export const App: React.FC = () => {
           if (message.contextSummary) {
             setContextSummary(message.contextSummary);
           }
-          if (!message.hasApiKey) {
-            setCurrentText(
-              'Aiyoo! Enakku Gemini API key theva! Settings icon click panni API key kudunga, jolly-ah pesalam! 🔑'
-            );
-            setCharacterState('surprised');
-          }
           break;
 
         case 'contextUpdated':
@@ -431,11 +425,13 @@ export const App: React.FC = () => {
         onTellJoke={handleTellJoke}
       />
 
-      {/* Voice Controls Panel */}
+      {/* Voice & Chat Input Controls Panel */}
       <VoiceControls
         isListening={isListening}
         isSpeaking={isSpeaking}
+        gender={voiceGender}
         currentLang={currentLang}
+        onSendMessage={handleSendMessage}
         onToggleListen={handleToggleListen}
         onStopSpeaking={handleStopSpeaking}
         onLanguageChange={setCurrentLang}

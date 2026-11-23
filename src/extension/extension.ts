@@ -13,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
   const secretStorage = new SecretStorageService(context.secrets);
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
-  const geminiService = new GeminiService(secretStorage, contextEngine);
+  const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);
 
   // Declare characterProvider reference
   let characterProvider: CharacterViewProvider;

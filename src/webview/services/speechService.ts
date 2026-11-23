@@ -13,9 +13,20 @@ export class SpeechService {
   private isSpeaking = false;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private mouthAnimInterval: any = null;
+  private voices: SpeechSynthesisVoice[] = [];
 
   constructor() {
     this.initRecognition();
+    this.initVoices();
+  }
+
+  private initVoices() {
+    if ('speechSynthesis' in window) {
+      this.voices = window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        this.voices = window.speechSynthesis.getVoices();
+      };
+    }
   }
 
   private initRecognition() {
@@ -26,7 +37,6 @@ export class SpeechService {
       this.recognition = new SpeechRecognition();
       this.recognition.continuous = false;
       this.recognition.interimResults = true;
-      // Bilingual / Indian English & Tamil support
       this.recognition.lang = 'en-IN';
     }
   }
@@ -47,7 +57,7 @@ export class SpeechService {
     }
 
     if (!this.recognition) {
-      callbacks.onError('Speech recognition is not supported in this environment.');
+      callbacks.onError('Microphone not supported in this environment. You can type in the chat box! 💬');
       return false;
     }
 
@@ -73,9 +83,13 @@ export class SpeechService {
         this.isListening = false;
         console.warn('SpeechRecognition error:', event.error);
         if (event.error === 'not-allowed') {
-          callbacks.onError('Microphone permission denied. Please allow microphone access.');
+          callbacks.onError('Microphone permission needed. You can also chat smoothly by typing! 👇');
+        } else if (event.error === 'network' || event.error === 'service-not-allowed') {
+          callbacks.onError('Voice network service not available in this VS Code build. Please type below! 💬');
+        } else if (event.error === 'no-speech') {
+          // No speech detected, quietly finish
         } else {
-          callbacks.onError(`Recognition issue: ${event.error}`);
+          callbacks.onError(`Mic alert: ${event.error}. You can also type!`);
         }
       };
 
@@ -89,7 +103,7 @@ export class SpeechService {
     } catch (err: any) {
       console.error('Failed to start speech recognition:', err);
       this.isListening = false;
-      callbacks.onError(err?.message || 'Failed to start microphone');
+      callbacks.onError('Voice capture issue. Please type your message in the chat box below! 👇');
       return false;
     }
   }
@@ -120,7 +134,7 @@ export class SpeechService {
 
     this.stopSpeaking();
 
-    // Clean text of emojis or special markdown before speaking
+    // Clean text of emojis or special markdown symbols before speaking
     const cleanSpeechText = text
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .replace(/[#*`_~]/g, '')
@@ -134,11 +148,13 @@ export class SpeechService {
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
     this.currentUtterance = utterance;
 
-    const voices = window.speechSynthesis.getVoices();
+    // Prevent Electron Garbage Collection from prematurely stopping speech
+    (window as any).__aiBuddyUtterance = utterance;
+
+    const availableVoices = this.voices.length > 0 ? this.voices : window.speechSynthesis.getVoices();
 
     if (gender === 'female') {
-      // Maya: Female voice, cute, lively
-      const femaleVoice = voices.find(
+      const femaleVoice = availableVoices.find(
         v =>
           (v.name.includes('Female') ||
             v.name.includes('Zira') ||
@@ -152,8 +168,7 @@ export class SpeechService {
       utterance.pitch = 1.2;
       utterance.rate = 1.05;
     } else {
-      // Vikram: Male voice, friendly, energetic
-      const maleVoice = voices.find(
+      const maleVoice = availableVoices.find(
         v =>
           (v.name.includes('Male') ||
             v.name.includes('David') ||
@@ -171,7 +186,6 @@ export class SpeechService {
       this.isSpeaking = true;
       onStart();
 
-      // Start reactive mouth viseme oscillation
       let mouthOpen = false;
       this.mouthAnimInterval = setInterval(() => {
         mouthOpen = !mouthOpen;
@@ -194,6 +208,7 @@ export class SpeechService {
   private cleanupSpeech(onEnd: () => void, onMouthViseme: (open: boolean) => void) {
     this.isSpeaking = false;
     this.currentUtterance = null;
+    (window as any).__aiBuddyUtterance = null;
     if (this.mouthAnimInterval) {
       clearInterval(this.mouthAnimInterval);
       this.mouthAnimInterval = null;
@@ -212,5 +227,6 @@ export class SpeechService {
     }
     this.isSpeaking = false;
     this.currentUtterance = null;
+    (window as any).__aiBuddyUtterance = null;
   }
 }

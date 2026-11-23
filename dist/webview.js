@@ -7281,11 +7281,11 @@
   });
 
   // src/webview/index.tsx
-  var import_react6 = __toESM(require_react());
+  var import_react7 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/webview/App.tsx
-  var import_react5 = __toESM(require_react());
+  var import_react6 = __toESM(require_react());
 
   // src/webview/services/vscodeBridge.ts
   var vscodeInstance = null;
@@ -7321,8 +7321,18 @@
     isSpeaking = false;
     currentUtterance = null;
     mouthAnimInterval = null;
+    voices = [];
     constructor() {
       this.initRecognition();
+      this.initVoices();
+    }
+    initVoices() {
+      if ("speechSynthesis" in window) {
+        this.voices = window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = () => {
+          this.voices = window.speechSynthesis.getVoices();
+        };
+      }
     }
     initRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -7346,7 +7356,7 @@
         this.initRecognition();
       }
       if (!this.recognition) {
-        callbacks.onError("Speech recognition is not supported in this environment.");
+        callbacks.onError("Microphone not supported in this environment. You can type in the chat box! \u{1F4AC}");
         return false;
       }
       try {
@@ -7369,9 +7379,12 @@
           this.isListening = false;
           console.warn("SpeechRecognition error:", event.error);
           if (event.error === "not-allowed") {
-            callbacks.onError("Microphone permission denied. Please allow microphone access.");
+            callbacks.onError("Microphone permission needed. You can also chat smoothly by typing! \u{1F447}");
+          } else if (event.error === "network" || event.error === "service-not-allowed") {
+            callbacks.onError("Voice network service not available in this VS Code build. Please type below! \u{1F4AC}");
+          } else if (event.error === "no-speech") {
           } else {
-            callbacks.onError(`Recognition issue: ${event.error}`);
+            callbacks.onError(`Mic alert: ${event.error}. You can also type!`);
           }
         };
         this.recognition.onend = () => {
@@ -7383,7 +7396,7 @@
       } catch (err) {
         console.error("Failed to start speech recognition:", err);
         this.isListening = false;
-        callbacks.onError(err?.message || "Failed to start microphone");
+        callbacks.onError("Voice capture issue. Please type your message in the chat box below! \u{1F447}");
         return false;
       }
     }
@@ -7410,16 +7423,17 @@
       }
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       this.currentUtterance = utterance;
-      const voices = window.speechSynthesis.getVoices();
+      window.__aiBuddyUtterance = utterance;
+      const availableVoices = this.voices.length > 0 ? this.voices : window.speechSynthesis.getVoices();
       if (gender === "female") {
-        const femaleVoice = voices.find(
+        const femaleVoice = availableVoices.find(
           (v) => (v.name.includes("Female") || v.name.includes("Zira") || v.name.includes("Heera") || v.name.includes("Samantha") || v.name.includes("Victoria") || v.name.includes("Jenny")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
         );
         if (femaleVoice) utterance.voice = femaleVoice;
         utterance.pitch = 1.2;
         utterance.rate = 1.05;
       } else {
-        const maleVoice = voices.find(
+        const maleVoice = availableVoices.find(
           (v) => (v.name.includes("Male") || v.name.includes("David") || v.name.includes("Ravi") || v.name.includes("Guy") || v.name.includes("George")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
         );
         if (maleVoice) utterance.voice = maleVoice;
@@ -7447,6 +7461,7 @@
     cleanupSpeech(onEnd, onMouthViseme) {
       this.isSpeaking = false;
       this.currentUtterance = null;
+      window.__aiBuddyUtterance = null;
       if (this.mouthAnimInterval) {
         clearInterval(this.mouthAnimInterval);
         this.mouthAnimInterval = null;
@@ -7464,6 +7479,7 @@
       }
       this.isSpeaking = false;
       this.currentUtterance = null;
+      window.__aiBuddyUtterance = null;
     }
   };
 
@@ -8022,8 +8038,21 @@
   ];
   var Save = createLucideIcon("Save", __iconNode15);
 
-  // node_modules/lucide-react/dist/esm/icons/settings.js
+  // node_modules/lucide-react/dist/esm/icons/send.js
   var __iconNode16 = [
+    [
+      "path",
+      {
+        d: "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z",
+        key: "1ffxy3"
+      }
+    ],
+    ["path", { d: "m21.854 2.147-10.94 10.939", key: "12cjpa" }]
+  ];
+  var Send = createLucideIcon("Send", __iconNode16);
+
+  // node_modules/lucide-react/dist/esm/icons/settings.js
+  var __iconNode17 = [
     [
       "path",
       {
@@ -8033,10 +8062,10 @@
     ],
     ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
   ];
-  var Settings = createLucideIcon("Settings", __iconNode16);
+  var Settings = createLucideIcon("Settings", __iconNode17);
 
   // node_modules/lucide-react/dist/esm/icons/shield-alert.js
-  var __iconNode17 = [
+  var __iconNode18 = [
     [
       "path",
       {
@@ -8047,10 +8076,10 @@
     ["path", { d: "M12 8v4", key: "1got3b" }],
     ["path", { d: "M12 16h.01", key: "1drbdi" }]
   ];
-  var ShieldAlert = createLucideIcon("ShieldAlert", __iconNode17);
+  var ShieldAlert = createLucideIcon("ShieldAlert", __iconNode18);
 
   // node_modules/lucide-react/dist/esm/icons/shield-check.js
-  var __iconNode18 = [
+  var __iconNode19 = [
     [
       "path",
       {
@@ -8060,10 +8089,10 @@
     ],
     ["path", { d: "m9 12 2 2 4-4", key: "dzmm74" }]
   ];
-  var ShieldCheck = createLucideIcon("ShieldCheck", __iconNode18);
+  var ShieldCheck = createLucideIcon("ShieldCheck", __iconNode19);
 
   // node_modules/lucide-react/dist/esm/icons/sparkles.js
-  var __iconNode19 = [
+  var __iconNode20 = [
     [
       "path",
       {
@@ -8076,33 +8105,33 @@
     ["path", { d: "M4 17v2", key: "vumght" }],
     ["path", { d: "M5 18H3", key: "zchphs" }]
   ];
-  var Sparkles = createLucideIcon("Sparkles", __iconNode19);
+  var Sparkles = createLucideIcon("Sparkles", __iconNode20);
 
   // node_modules/lucide-react/dist/esm/icons/square.js
-  var __iconNode20 = [
+  var __iconNode21 = [
     ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }]
   ];
-  var Square = createLucideIcon("Square", __iconNode20);
+  var Square = createLucideIcon("Square", __iconNode21);
 
   // node_modules/lucide-react/dist/esm/icons/terminal.js
-  var __iconNode21 = [
+  var __iconNode22 = [
     ["polyline", { points: "4 17 10 11 4 5", key: "akl6gq" }],
     ["line", { x1: "12", x2: "20", y1: "19", y2: "19", key: "q2wloq" }]
   ];
-  var Terminal = createLucideIcon("Terminal", __iconNode21);
+  var Terminal = createLucideIcon("Terminal", __iconNode22);
 
   // node_modules/lucide-react/dist/esm/icons/trash-2.js
-  var __iconNode22 = [
+  var __iconNode23 = [
     ["path", { d: "M3 6h18", key: "d0wm0j" }],
     ["path", { d: "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6", key: "4alrt4" }],
     ["path", { d: "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2", key: "v07s0e" }],
     ["line", { x1: "10", x2: "10", y1: "11", y2: "17", key: "1uufr5" }],
     ["line", { x1: "14", x2: "14", y1: "11", y2: "17", key: "xtxkd" }]
   ];
-  var Trash2 = createLucideIcon("Trash2", __iconNode22);
+  var Trash2 = createLucideIcon("Trash2", __iconNode23);
 
   // node_modules/lucide-react/dist/esm/icons/triangle-alert.js
-  var __iconNode23 = [
+  var __iconNode24 = [
     [
       "path",
       {
@@ -8113,10 +8142,10 @@
     ["path", { d: "M12 9v4", key: "juzpu7" }],
     ["path", { d: "M12 17h.01", key: "p32p05" }]
   ];
-  var TriangleAlert = createLucideIcon("TriangleAlert", __iconNode23);
+  var TriangleAlert = createLucideIcon("TriangleAlert", __iconNode24);
 
   // node_modules/lucide-react/dist/esm/icons/volume-2.js
-  var __iconNode24 = [
+  var __iconNode25 = [
     [
       "path",
       {
@@ -8127,10 +8156,10 @@
     ["path", { d: "M16 9a5 5 0 0 1 0 6", key: "1q6k2b" }],
     ["path", { d: "M19.364 18.364a9 9 0 0 0 0-12.728", key: "ijwkga" }]
   ];
-  var Volume2 = createLucideIcon("Volume2", __iconNode24);
+  var Volume2 = createLucideIcon("Volume2", __iconNode25);
 
   // node_modules/lucide-react/dist/esm/icons/volume-x.js
-  var __iconNode25 = [
+  var __iconNode26 = [
     [
       "path",
       {
@@ -8141,7 +8170,7 @@
     ["line", { x1: "22", x2: "16", y1: "9", y2: "15", key: "1ewh16" }],
     ["line", { x1: "16", x2: "22", y1: "9", y2: "15", key: "5ykzw1" }]
   ];
-  var VolumeX = createLucideIcon("VolumeX", __iconNode25);
+  var VolumeX = createLucideIcon("VolumeX", __iconNode26);
 
   // src/webview/components/Voice/VoiceSwitcher.tsx
   var import_jsx_runtime4 = __toESM(require_jsx_runtime());
@@ -8271,6 +8300,9 @@
     ] });
   };
 
+  // src/webview/components/Voice/VoiceControls.tsx
+  var import_react4 = __toESM(require_react());
+
   // src/webview/components/Voice/AudioWaveform.tsx
   var import_jsx_runtime6 = __toESM(require_jsx_runtime());
   var AudioWaveform = ({
@@ -8291,12 +8323,57 @@
   var VoiceControls = ({
     isListening,
     isSpeaking,
+    gender,
     currentLang,
+    onSendMessage,
     onToggleListen,
     onStopSpeaking,
     onLanguageChange
   }) => {
+    const [inputText, setInputText] = (0, import_react4.useState)("");
+    const handleSend = () => {
+      if (inputText.trim()) {
+        onSendMessage(inputText.trim());
+        setInputText("");
+      }
+    };
+    const companionName = gender === "female" ? "Maya" : "Vikram";
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "voice-controls-panel", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "chat-input-bar", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+          "input",
+          {
+            type: "text",
+            className: "chat-text-input",
+            placeholder: `Message ${companionName} (Tamil / Tanglish / Eng)...`,
+            value: inputText,
+            onChange: (e) => setInputText(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === "Enter") handleSend();
+            }
+          }
+        ),
+        inputText.trim().length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+          "button",
+          {
+            className: "chat-action-btn btn-send",
+            onClick: handleSend,
+            title: "Send Message",
+            children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Send, { size: 15 })
+          }
+        ) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          "button",
+          {
+            className: `chat-action-btn btn-mic ${isListening ? "listening" : ""}`,
+            onClick: onToggleListen,
+            title: isListening ? "Stop Listening" : "Speak to AI Buddy",
+            children: [
+              isListening ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MicOff, { size: 16 }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Mic, { size: 16 }),
+              isListening && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "pulse-glow-ring-sm" })
+            ]
+          }
+        )
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         AudioWaveform,
         {
@@ -8334,25 +8411,16 @@
             }
           )
         ] }),
-        isSpeaking && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+        isSpeaking && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
           "button",
           {
             className: "control-circle-btn btn-stop",
             onClick: onStopSpeaking,
             title: "Interrupt speech",
-            children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Square, { size: 16, fill: "currentColor" })
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
-          "button",
-          {
-            className: `mic-primary-btn ${isListening ? "listening" : ""}`,
-            onClick: onToggleListen,
-            title: isListening ? "Stop Listening" : "Speak to AI Buddy",
-            children: isListening ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "mic-listening-content", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(MicOff, { size: 22 }),
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "pulse-glow-ring" })
-            ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Mic, { size: 22 })
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Square, { size: 14, fill: "currentColor" }),
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { fontSize: "10px", marginLeft: "4px" }, children: "Stop" })
+            ]
           }
         )
       ] })
@@ -8393,7 +8461,7 @@
   };
 
   // src/webview/components/Settings/SettingsModal.tsx
-  var import_react4 = __toESM(require_react());
+  var import_react5 = __toESM(require_react());
   var import_jsx_runtime9 = __toESM(require_jsx_runtime());
   var SettingsModal = ({
     isOpen,
@@ -8404,7 +8472,7 @@
     onSaveKey,
     onSetFrequency
   }) => {
-    const [inputKey, setInputKey] = (0, import_react4.useState)("");
+    const [inputKey, setInputKey] = (0, import_react5.useState)("");
     if (!isOpen) return null;
     const handleSave = () => {
       onSaveKey(inputKey);
@@ -8517,25 +8585,25 @@
   // src/webview/App.tsx
   var import_jsx_runtime10 = __toESM(require_jsx_runtime());
   var App = () => {
-    const [characterState, setCharacterState] = (0, import_react5.useState)("idle");
-    const [voiceGender, setVoiceGender] = (0, import_react5.useState)("female");
-    const [hasApiKey, setHasApiKey] = (0, import_react5.useState)(false);
-    const [quietMode, setQuietMode] = (0, import_react5.useState)(false);
-    const [proactiveFrequency, setProactiveFrequency] = (0, import_react5.useState)("medium");
-    const [currentText, setCurrentText] = (0, import_react5.useState)(
+    const [characterState, setCharacterState] = (0, import_react6.useState)("idle");
+    const [voiceGender, setVoiceGender] = (0, import_react6.useState)("female");
+    const [hasApiKey, setHasApiKey] = (0, import_react6.useState)(false);
+    const [quietMode, setQuietMode] = (0, import_react6.useState)(false);
+    const [proactiveFrequency, setProactiveFrequency] = (0, import_react6.useState)("medium");
+    const [currentText, setCurrentText] = (0, import_react6.useState)(
       "Heyyy! Enna panra? Coding ah? Illa summa time pass ah? \u{1F602}"
     );
-    const [isThinking, setIsThinking] = (0, import_react5.useState)(false);
-    const [isListening, setIsListening] = (0, import_react5.useState)(false);
-    const [isSpeaking, setIsSpeaking] = (0, import_react5.useState)(false);
-    const [isMouthOpen, setIsMouthOpen] = (0, import_react5.useState)(false);
-    const [currentLang, setCurrentLang] = (0, import_react5.useState)("en-IN");
-    const [messages, setMessages] = (0, import_react5.useState)([]);
-    const [contextSummary, setContextSummary] = (0, import_react5.useState)(null);
-    const [isHistoryOpen, setIsHistoryOpen] = (0, import_react5.useState)(false);
-    const [isSettingsOpen, setIsSettingsOpen] = (0, import_react5.useState)(false);
-    const speechServiceRef = (0, import_react5.useRef)(null);
-    (0, import_react5.useEffect)(() => {
+    const [isThinking, setIsThinking] = (0, import_react6.useState)(false);
+    const [isListening, setIsListening] = (0, import_react6.useState)(false);
+    const [isSpeaking, setIsSpeaking] = (0, import_react6.useState)(false);
+    const [isMouthOpen, setIsMouthOpen] = (0, import_react6.useState)(false);
+    const [currentLang, setCurrentLang] = (0, import_react6.useState)("en-IN");
+    const [messages, setMessages] = (0, import_react6.useState)([]);
+    const [contextSummary, setContextSummary] = (0, import_react6.useState)(null);
+    const [isHistoryOpen, setIsHistoryOpen] = (0, import_react6.useState)(false);
+    const [isSettingsOpen, setIsSettingsOpen] = (0, import_react6.useState)(false);
+    const speechServiceRef = (0, import_react6.useRef)(null);
+    (0, import_react6.useEffect)(() => {
       speechServiceRef.current = new SpeechService();
       const vscode = getVsCodeApi();
       vscode.postMessage({ type: "ready" });
@@ -8550,12 +8618,6 @@
             }
             if (message.contextSummary) {
               setContextSummary(message.contextSummary);
-            }
-            if (!message.hasApiKey) {
-              setCurrentText(
-                "Aiyoo! Enakku Gemini API key theva! Settings icon click panni API key kudunga, jolly-ah pesalam! \u{1F511}"
-              );
-              setCharacterState("surprised");
             }
             break;
           case "contextUpdated":
@@ -8872,7 +8934,9 @@
         {
           isListening,
           isSpeaking,
+          gender: voiceGender,
           currentLang,
+          onSendMessage: handleSendMessage,
           onToggleListen: handleToggleListen,
           onStopSpeaking: handleStopSpeaking,
           onLanguageChange: setCurrentLang
@@ -8908,7 +8972,7 @@
   if (container) {
     const root = (0, import_client.createRoot)(container);
     root.render(
-      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_react6.default.StrictMode, { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(App, {}) })
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_react7.default.StrictMode, { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(App, {}) })
     );
   }
 })();
@@ -8977,6 +9041,7 @@ lucide-react/dist/esm/icons/message-square.js:
 lucide-react/dist/esm/icons/mic-off.js:
 lucide-react/dist/esm/icons/mic.js:
 lucide-react/dist/esm/icons/save.js:
+lucide-react/dist/esm/icons/send.js:
 lucide-react/dist/esm/icons/settings.js:
 lucide-react/dist/esm/icons/shield-alert.js:
 lucide-react/dist/esm/icons/shield-check.js:

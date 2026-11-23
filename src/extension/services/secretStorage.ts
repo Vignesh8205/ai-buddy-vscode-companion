@@ -15,6 +15,21 @@ export class SecretStorageService {
     if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0) {
       return process.env.GEMINI_API_KEY.trim();
     }
+    // Fallback to apikey.md in workspace root if present
+    try {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const rootPath = workspaceFolders[0].uri;
+        const keyUri = vscode.Uri.joinPath(rootPath, 'apikey.md');
+        const content = await vscode.workspace.fs.readFile(keyUri);
+        const text = new TextDecoder().decode(content).trim();
+        if (text && text.length > 10) {
+          return text;
+        }
+      }
+    } catch (e) {
+      // not present
+    }
     return undefined;
   }
 

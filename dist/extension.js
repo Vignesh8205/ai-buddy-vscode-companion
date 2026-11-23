@@ -34,7 +34,7 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode5 = __toESM(require("vscode"));
+var vscode6 = __toESM(require("vscode"));
 
 // src/extension/providers/characterViewProvider.ts
 var vscode = __toESM(require("vscode"));
@@ -1245,9 +1245,10 @@ var GoogleGenerativeAI = class {
 
 // src/extension/services/geminiService.ts
 var GeminiService = class {
-  constructor(secretStorage, contextEngine) {
+  constructor(secretStorage, contextEngine, personalityEngine) {
     this.secretStorage = secretStorage;
     this.contextEngine = contextEngine;
+    this.personalityEngine = personalityEngine;
   }
   conversationHistory = [];
   getSystemInstruction(gender, contextPrompt) {
@@ -1276,6 +1277,9 @@ When the user talks about their project, active file, or errors, use the context
   async generateReply(userText, gender, modelName = "gemini-1.5-flash", projectSummary) {
     const apiKey = await this.secretStorage.getApiKey();
     if (!apiKey) {
+      if (this.personalityEngine) {
+        return this.personalityEngine.generateFallbackConversation(userText, gender, projectSummary);
+      }
       return {
         text: "Aiyoo! Enakku Gemini API key innum set aagala! Settings icon click panni unga API key kudunga, appo thaan namma jolly-ah real AI-la pesa mudiyum! \u{1F511}",
         emotion: "surprised"
@@ -1359,6 +1363,7 @@ When the user talks about their project, active file, or errors, use the context
 };
 
 // src/extension/services/secretStorage.ts
+var vscode2 = __toESM(require("vscode"));
 var SecretStorageService = class _SecretStorageService {
   constructor(secretStorage) {
     this.secretStorage = secretStorage;
@@ -1371,6 +1376,19 @@ var SecretStorageService = class _SecretStorageService {
     }
     if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0) {
       return process.env.GEMINI_API_KEY.trim();
+    }
+    try {
+      const workspaceFolders = vscode2.workspace.workspaceFolders;
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const rootPath = workspaceFolders[0].uri;
+        const keyUri = vscode2.Uri.joinPath(rootPath, "apikey.md");
+        const content = await vscode2.workspace.fs.readFile(keyUri);
+        const text = new TextDecoder().decode(content).trim();
+        if (text && text.length > 10) {
+          return text;
+        }
+      }
+    } catch (e) {
     }
     return void 0;
   }
@@ -1391,12 +1409,12 @@ var SecretStorageService = class _SecretStorageService {
 };
 
 // src/extension/services/contextEngine.ts
-var vscode2 = __toESM(require("vscode"));
+var vscode3 = __toESM(require("vscode"));
 var path = __toESM(require("path"));
 var ContextEngine = class {
   currentSummary = null;
   async analyzeWorkspace() {
-    const workspaceFolders = vscode2.workspace.workspaceFolders;
+    const workspaceFolders = vscode3.workspace.workspaceFolders;
     const rootPath = workspaceFolders && workspaceFolders.length > 0 ? workspaceFolders[0].uri.fsPath : "";
     const projectName = workspaceFolders && workspaceFolders.length > 0 ? workspaceFolders[0].name : "Unknown Project";
     let projectType = "Generic";
@@ -1405,8 +1423,8 @@ var ContextEngine = class {
     let primaryLanguage = "Plain Text";
     if (rootPath) {
       try {
-        const pkgUri = vscode2.Uri.file(path.join(rootPath, "package.json"));
-        const pkgDoc = await vscode2.workspace.fs.readFile(pkgUri);
+        const pkgUri = vscode3.Uri.file(path.join(rootPath, "package.json"));
+        const pkgDoc = await vscode3.workspace.fs.readFile(pkgUri);
         const pkg = JSON.parse(new TextDecoder().decode(pkgDoc));
         projectType = "Node.js";
         primaryLanguage = "JavaScript";
@@ -1430,8 +1448,8 @@ var ContextEngine = class {
       }
       if (projectType === "Generic") {
         try {
-          const reqUri = vscode2.Uri.file(path.join(rootPath, "requirements.txt"));
-          await vscode2.workspace.fs.stat(reqUri);
+          const reqUri = vscode3.Uri.file(path.join(rootPath, "requirements.txt"));
+          await vscode3.workspace.fs.stat(reqUri);
           projectType = "Python";
           primaryLanguage = "Python";
           testFramework = "pytest";
@@ -1440,7 +1458,7 @@ var ContextEngine = class {
       }
     }
     let activeFileInfo;
-    const activeEditor = vscode2.window.activeTextEditor;
+    const activeEditor = vscode3.window.activeTextEditor;
     if (activeEditor) {
       const doc = activeEditor.document;
       const relPath = rootPath ? path.relative(rootPath, doc.uri.fsPath) : doc.uri.fsPath;
@@ -1458,7 +1476,7 @@ var ContextEngine = class {
     const diagnosticsSummary = this.extractDiagnostics(rootPath);
     let gitBranch;
     try {
-      const gitExt = vscode2.extensions.getExtension("vscode.git");
+      const gitExt = vscode3.extensions.getExtension("vscode.git");
       if (gitExt && gitExt.isActive) {
         const gitApi = gitExt.exports.getAPI(1);
         if (gitApi.repositories.length > 0) {
@@ -1488,14 +1506,14 @@ var ContextEngine = class {
     let errorCount = 0;
     let warningCount = 0;
     const topErrors = [];
-    const allDiagnostics = vscode2.languages.getDiagnostics();
+    const allDiagnostics = vscode3.languages.getDiagnostics();
     for (const [uri, diags] of allDiagnostics) {
       const fsPath = uri.fsPath;
       if (rootPath && !fsPath.startsWith(rootPath)) continue;
       if (fsPath.includes("node_modules") || fsPath.includes(".git")) continue;
       if (this.isSensitiveFile(fsPath)) continue;
       for (const diag of diags) {
-        if (diag.severity === vscode2.DiagnosticSeverity.Error) {
+        if (diag.severity === vscode3.DiagnosticSeverity.Error) {
           errorCount++;
           if (topErrors.length < 5) {
             topErrors.push({
@@ -1505,7 +1523,7 @@ var ContextEngine = class {
               source: diag.source
             });
           }
-        } else if (diag.severity === vscode2.DiagnosticSeverity.Warning) {
+        } else if (diag.severity === vscode3.DiagnosticSeverity.Warning) {
           warningCount++;
         }
       }
@@ -1563,7 +1581,7 @@ var ContextEngine = class {
 };
 
 // src/extension/services/workspaceMonitor.ts
-var vscode3 = __toESM(require("vscode"));
+var vscode4 = __toESM(require("vscode"));
 var WorkspaceMonitorService = class {
   constructor(contextEngine, proactiveEngine, callbacks) {
     this.contextEngine = contextEngine;
@@ -1577,27 +1595,27 @@ var WorkspaceMonitorService = class {
   lastErrorSignature = "";
   previousErrorCount = 0;
   activate() {
-    const config = vscode3.workspace.getConfiguration("aiBuddy.monitoring");
+    const config = vscode4.workspace.getConfiguration("aiBuddy.monitoring");
     const enabled = config.get("enabled", true);
     if (!enabled) {
       console.log("AI Buddy Workspace Monitoring is disabled in settings.");
       return;
     }
     this.disposables.push(
-      vscode3.window.onDidChangeActiveTextEditor(() => {
+      vscode4.window.onDidChangeActiveTextEditor(() => {
         this.proactiveEngine.recordUserActivity();
         this.debounce(() => this.handleEditorChange(), "editor", 600);
       })
     );
     this.disposables.push(
-      vscode3.workspace.onDidChangeTextDocument((e) => {
+      vscode4.workspace.onDidChangeTextDocument((e) => {
         if (!this.contextEngine.isSensitiveFile(e.document.uri.fsPath)) {
           this.proactiveEngine.recordUserActivity();
         }
       })
     );
     this.disposables.push(
-      vscode3.workspace.onDidSaveTextDocument((doc) => {
+      vscode4.workspace.onDidSaveTextDocument((doc) => {
         if (!this.contextEngine.isSensitiveFile(doc.uri.fsPath)) {
           this.proactiveEngine.recordUserActivity();
           this.debounce(() => this.handleFileSave(doc), "save", 1500);
@@ -1605,12 +1623,12 @@ var WorkspaceMonitorService = class {
       })
     );
     this.disposables.push(
-      vscode3.languages.onDidChangeDiagnostics(() => {
+      vscode4.languages.onDidChangeDiagnostics(() => {
         this.debounce(() => this.handleDiagnosticsChange(), "diagnostics", 2e3);
       })
     );
     this.disposables.push(
-      vscode3.tasks.onDidEndTaskProcess((event) => {
+      vscode4.tasks.onDidEndTaskProcess((event) => {
         const taskName = event.execution.task.name || "Task";
         const isSuccess = event.exitCode === 0;
         if (taskName.toLowerCase().includes("test") || taskName.toLowerCase().includes("playwright") || taskName.toLowerCase().includes("build")) {
@@ -1736,6 +1754,63 @@ var PersonalityEngine = class {
     this.usedJokeIndices.add(idx);
     return this.curatedJokes[idx];
   }
+  generateFallbackConversation(userText, gender, summary) {
+    const isFemale = gender === "female";
+    const lower = userText.toLowerCase().trim();
+    if (/^(hi|hello|hey|vanakkam|halo|heyyy|welcome|oi)/i.test(lower)) {
+      return {
+        text: isFemale ? "Heyyy! Super to meet you! Naan Maya, unga coding buddy! Enna project panra? Chat-la sollunga! \u2728" : "Vanakkam bro! Naan Vikram! Coding-la doubts, bugs, jokes ethuvaanaalum naan irukken! Eppo start pannuvom? \u{1F680}",
+        emotion: "happy"
+      };
+    }
+    if (/playwright|test|automation|cypress|jest|vitest|qa/i.test(lower)) {
+      return {
+        text: isFemale ? "Ohh! Automation testing ah? Super! Innaiku bugs-ah catch panna poroma? All green ticks varanum! \u{1F525}" : "Playwright testing vera level bro! Test cases ezhudhiyaacha? Innaiku bugs ellaam odipoidum! \u{1F9EA}",
+        emotion: "happy"
+      };
+    }
+    if (/joke|comedy|sirippu|funny|laugh/i.test(lower)) {
+      return this.getRandomJoke();
+    }
+    if (/how are you|eppadi irukka|nalama|fine/i.test(lower)) {
+      return {
+        text: isFemale ? "Naan full energetic-ah irukken! Unga code-la zero bugs paatha innum jolly-ah iruppen! \u{1F604}" : "Semma jolly-ah irukken bro! Innaiku target features ellam mudichiduvoma? \u{1F4AA}",
+        emotion: "happy"
+      };
+    }
+    if (/who are you|yaar nee|un per|your name|intro/i.test(lower)) {
+      return {
+        text: isFemale ? "Naan Maya! Unga cute & energetic VS Code pair programmer! Jokes solluven, bugs track pannuven, jolly-ah pesuven! \u{1F496}" : "Naan Vikram! Unga witty coding companion! Workspace analyze panni helpful-ah pesuven! \u{1F91D}",
+        emotion: "happy"
+      };
+    }
+    if (/error|bug|help|issue|fail|problem|stuck|fix/i.test(lower)) {
+      if (summary && summary.diagnosticsSummary.errorCount > 0) {
+        const top = summary.diagnosticsSummary.topErrors[0];
+        return {
+          text: `Aiyooo! ${top.file}:${top.line}-la "${top.message.slice(0, 70)}" error irukku. Type definition check pannalama? \u{1F914}`,
+          emotion: "confused"
+        };
+      }
+      return {
+        text: isFemale ? "Kavalai padadha! Bug enga irukku nu paapom! Code explain pannu, namma sernthu fix pannuvom! \u{1F41E}" : "Don't worry bro! Bug fix panradhu namma velai! Code snippet sollu, solution kandupidikkalam! \u{1F6E0}\uFE0F",
+        emotion: "thinking"
+      };
+    }
+    if (/project|workspace|stack|tech|repo/i.test(lower)) {
+      const proj = summary?.projectName || "Active Workspace";
+      const lang = summary?.primaryLanguage || "Code";
+      const test = summary?.testFramework ? `, Testing: ${summary.testFramework}` : "";
+      return {
+        text: isFemale ? `Namma current project: ${proj} (${lang}${test})! Mass-ah develop panrom! \u{1F525}` : `Project ${proj} semma setup bro! ${lang} use panrom, coding super-ah poguthu! \u{1F680}`,
+        emotion: "happy"
+      };
+    }
+    return {
+      text: isFemale ? `Super da! "${userText}" kettu yosikren! Nalla point! (\u{1F4A1} Tip: Settings icon click panni free Gemini API Key potta, deep AI reasoning kedaikkum!) \u2728` : `Got it bro! "${userText}" semma! Namma work semma speed-ah poguthu! (\u{1F4A1} Tip: Add Gemini API Key in Settings for unlimited AI coding brain!) \u{1F680}`,
+      emotion: "speaking"
+    };
+  }
   async generateProactiveMessage(eventType, gender, summary, geminiService) {
     const isFemale = gender === "female";
     if (geminiService) {
@@ -1812,7 +1887,7 @@ var PersonalityEngine = class {
 };
 
 // src/extension/services/proactiveEngine.ts
-var vscode4 = __toESM(require("vscode"));
+var vscode5 = __toESM(require("vscode"));
 var ProactiveDecisionEngine = class {
   constructor(personalityEngine, contextEngine, geminiService, callbacks) {
     this.personalityEngine = personalityEngine;
@@ -1834,7 +1909,7 @@ var ProactiveDecisionEngine = class {
     this.lastUserActivityTime = Date.now();
   }
   async evaluateEvent(eventType) {
-    const config = vscode4.workspace.getConfiguration("aiBuddy");
+    const config = vscode5.workspace.getConfiguration("aiBuddy");
     const frequency = config.get("conversationFrequency", "medium");
     const quietMode = config.get("quietMode", false);
     const voiceGender = config.get("voiceGender", "female");
@@ -1912,7 +1987,7 @@ function activate(context) {
   const secretStorage = new SecretStorageService(context.secrets);
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
-  const geminiService = new GeminiService(secretStorage, contextEngine);
+  const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);
   let characterProvider;
   const proactiveEngine = new ProactiveDecisionEngine(
     personalityEngine,
@@ -1966,15 +2041,15 @@ function activate(context) {
     }
   });
   context.subscriptions.push(
-    vscode5.window.registerWebviewViewProvider(CharacterViewProvider.viewType, characterProvider, {
+    vscode6.window.registerWebviewViewProvider(CharacterViewProvider.viewType, characterProvider, {
       webviewOptions: {
         retainContextWhenHidden: true
       }
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.setApiKey", async () => {
-      const apiKey = await vscode5.window.showInputBox({
+    vscode6.commands.registerCommand("aiBuddy.setApiKey", async () => {
+      const apiKey = await vscode6.window.showInputBox({
         title: "AI Buddy: Enter Google Gemini API Key",
         prompt: "Get your free key from https://aistudio.google.com/app/apikey",
         password: true,
@@ -1982,15 +2057,15 @@ function activate(context) {
       });
       if (apiKey !== void 0) {
         await secretStorage.setApiKey(apiKey);
-        vscode5.window.showInformationMessage("AI Buddy: Gemini API Key saved successfully in SecretStorage!");
+        vscode6.window.showInformationMessage("AI Buddy: Gemini API Key saved successfully in SecretStorage!");
         characterProvider.postMessage({ type: "apiKeyStatus", hasKey: !!apiKey });
       }
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.tellJoke", () => {
+    vscode6.commands.registerCommand("aiBuddy.tellJoke", () => {
       const joke = personalityEngine.getRandomJoke();
-      const config = vscode5.workspace.getConfiguration("aiBuddy");
+      const config = vscode6.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       characterProvider.postMessage({
         type: "characterReply",
@@ -2001,14 +2076,14 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.analyzeWorkspace", async () => {
+    vscode6.commands.registerCommand("aiBuddy.analyzeWorkspace", async () => {
       const summary = await contextEngine.analyzeWorkspace();
-      const config = vscode5.workspace.getConfiguration("aiBuddy");
+      const config = vscode6.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       const model = config.get("geminiModel", "gemini-1.5-flash");
-      vscode5.window.withProgress(
+      vscode6.window.withProgress(
         {
-          location: vscode5.ProgressLocation.Notification,
+          location: vscode6.ProgressLocation.Notification,
           title: "AI Buddy is analyzing your workspace..."
         },
         async () => {
@@ -2024,9 +2099,9 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.explainError", async () => {
+    vscode6.commands.registerCommand("aiBuddy.explainError", async () => {
       const summary = await contextEngine.analyzeWorkspace();
-      const config = vscode5.workspace.getConfiguration("aiBuddy");
+      const config = vscode6.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       const model = config.get("geminiModel", "gemini-1.5-flash");
       const reply = await geminiService.explainCurrentError(summary, gender, model);
@@ -2039,21 +2114,21 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.toggleVoice", async () => {
-      const config = vscode5.workspace.getConfiguration("aiBuddy");
+    vscode6.commands.registerCommand("aiBuddy.toggleVoice", async () => {
+      const config = vscode6.workspace.getConfiguration("aiBuddy");
       const current = config.get("voiceGender", "female");
       const next = current === "female" ? "male" : "female";
-      await config.update("voiceGender", next, vscode5.ConfigurationTarget.Global);
-      vscode5.window.showInformationMessage(
+      await config.update("voiceGender", next, vscode6.ConfigurationTarget.Global);
+      vscode6.window.showInformationMessage(
         `AI Buddy: Voice switched to ${next === "female" ? "Female (Maya)" : "Male (Vikram)"}`
       );
       characterProvider.postMessage({ type: "voiceChanged", gender: next });
     })
   );
   context.subscriptions.push(
-    vscode5.commands.registerCommand("aiBuddy.resetSession", () => {
+    vscode6.commands.registerCommand("aiBuddy.resetSession", () => {
       geminiService.clearHistory();
-      vscode5.window.showInformationMessage("AI Buddy: Conversation history reset.");
+      vscode6.window.showInformationMessage("AI Buddy: Conversation history reset.");
     })
   );
   console.log("AI Buddy extension fully activated with Proactive Conversations!");

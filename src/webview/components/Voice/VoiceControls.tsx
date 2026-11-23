@@ -1,11 +1,14 @@
-import React from 'react';
-import { Mic, MicOff, Square, Volume2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Mic, MicOff, Square, Send } from 'lucide-react';
 import { AudioWaveform } from './AudioWaveform';
+import { VoiceGender } from '../../../shared/types';
 
 interface VoiceControlsProps {
   isListening: boolean;
   isSpeaking: boolean;
+  gender: VoiceGender;
   currentLang: 'ta-IN' | 'en-IN' | 'en-US';
+  onSendMessage: (text: string) => void;
   onToggleListen: () => void;
   onStopSpeaking: () => void;
   onLanguageChange: (lang: 'ta-IN' | 'en-IN' | 'en-US') => void;
@@ -14,13 +17,59 @@ interface VoiceControlsProps {
 export const VoiceControls: React.FC<VoiceControlsProps> = ({
   isListening,
   isSpeaking,
+  gender,
   currentLang,
+  onSendMessage,
   onToggleListen,
   onStopSpeaking,
   onLanguageChange,
 }) => {
+  const [inputText, setInputText] = useState('');
+
+  const handleSend = () => {
+    if (inputText.trim()) {
+      onSendMessage(inputText.trim());
+      setInputText('');
+    }
+  };
+
+  const companionName = gender === 'female' ? 'Maya' : 'Vikram';
+
   return (
     <div className="voice-controls-panel">
+      {/* Primary Chat Input Bar (Text + Voice + Send) */}
+      <div className="chat-input-bar">
+        <input
+          type="text"
+          className="chat-text-input"
+          placeholder={`Message ${companionName} (Tamil / Tanglish / Eng)...`}
+          value={inputText}
+          onChange={e => setInputText(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleSend();
+          }}
+        />
+
+        {inputText.trim().length > 0 ? (
+          <button
+            className="chat-action-btn btn-send"
+            onClick={handleSend}
+            title="Send Message"
+          >
+            <Send size={15} />
+          </button>
+        ) : (
+          <button
+            className={`chat-action-btn btn-mic ${isListening ? 'listening' : ''}`}
+            onClick={onToggleListen}
+            title={isListening ? 'Stop Listening' : 'Speak to AI Buddy'}
+          >
+            {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+            {isListening && <div className="pulse-glow-ring-sm" />}
+          </button>
+        )}
+      </div>
+
       {/* Visual Audio Waveform */}
       <AudioWaveform
         isActive={isListening || isSpeaking}
@@ -60,25 +109,10 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
             onClick={onStopSpeaking}
             title="Interrupt speech"
           >
-            <Square size={16} fill="currentColor" />
+            <Square size={14} fill="currentColor" />
+            <span style={{ fontSize: '10px', marginLeft: '4px' }}>Stop</span>
           </button>
         )}
-
-        {/* Primary Glowing Mic Button */}
-        <button
-          className={`mic-primary-btn ${isListening ? 'listening' : ''}`}
-          onClick={onToggleListen}
-          title={isListening ? 'Stop Listening' : 'Speak to AI Buddy'}
-        >
-          {isListening ? (
-            <div className="mic-listening-content">
-              <MicOff size={22} />
-              <div className="pulse-glow-ring" />
-            </div>
-          ) : (
-            <Mic size={22} />
-          )}
-        </button>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CharacterState, ProjectSummary, VoiceGender } from '../../shared/types';
 import { SecretStorageService } from './secretStorage';
 import { ContextEngine } from './contextEngine';
+import { PersonalityEngine } from './personalityEngine';
 
 export interface GeminiReply {
   text: string;
@@ -13,8 +14,9 @@ export class GeminiService {
 
   constructor(
     private readonly secretStorage: SecretStorageService,
-    private readonly contextEngine?: ContextEngine
-  ) { }
+    private readonly contextEngine?: ContextEngine,
+    private readonly personalityEngine?: PersonalityEngine
+  ) {}
 
   private getSystemInstruction(gender: VoiceGender, contextPrompt?: string): string {
     const persona =
@@ -51,6 +53,9 @@ CONVERSATION & PERSONALITY RULES:
   ): Promise<GeminiReply> {
     const apiKey = await this.secretStorage.getApiKey();
     if (!apiKey) {
+      if (this.personalityEngine) {
+        return this.personalityEngine.generateFallbackConversation(userText, gender, projectSummary);
+      }
       return {
         text: 'Aiyoo! Enakku Gemini API key innum set aagala! Settings icon click panni unga API key kudunga, appo thaan namma jolly-ah real AI-la pesa mudiyum! 🔑',
         emotion: 'surprised',

@@ -10,3 +10,5 @@ first.md
 .gitignore
 .npmrc
 *.vsix
+
+apikey*
