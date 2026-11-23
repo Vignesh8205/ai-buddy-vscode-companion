@@ -39,13 +39,14 @@ var vscode6 = __toESM(require("vscode"));
 // src/extension/providers/characterViewProvider.ts
 var vscode = __toESM(require("vscode"));
 var CharacterViewProvider = class {
-  constructor(_extensionUri, _secretStorage, _geminiService, _contextEngine, _personalityEngine, _proactiveEngine) {
+  constructor(_extensionUri, _secretStorage, _geminiService, _contextEngine, _personalityEngine, _proactiveEngine, _audioClipsService) {
     this._extensionUri = _extensionUri;
     this._secretStorage = _secretStorage;
     this._geminiService = _geminiService;
     this._contextEngine = _contextEngine;
     this._personalityEngine = _personalityEngine;
     this._proactiveEngine = _proactiveEngine;
+    this._audioClipsService = _audioClipsService;
   }
   static viewType = "aiBuddy.characterView";
   _view;
@@ -92,23 +93,26 @@ var CharacterViewProvider = class {
           modelName,
           summary
         );
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData
+          audioData: realClip || reply.audioData
         });
         break;
       }
       case "tellJoke": {
         this._proactiveEngine.recordUserActivity();
         const joke = this._personalityEngine.getRandomJoke();
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: joke.text,
           emotion: joke.emotion,
-          voiceGender
+          voiceGender,
+          audioData: realClip
         });
         break;
       }
@@ -126,12 +130,13 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData
+          audioData: realClip || reply.audioData
         });
         break;
       }
@@ -143,12 +148,13 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData
+          audioData: realClip || reply.audioData
         });
         break;
       }
@@ -188,22 +194,26 @@ var CharacterViewProvider = class {
     });
   }
   sendProactiveSpeech(text, emotion, voiceGender, category) {
+    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
     this.postMessage({
       type: "proactiveSpeech",
       text,
       emotion,
       voiceGender,
-      category
+      category,
+      audioData: realClip
     });
   }
   sendWorkspaceAlert(text, emotion) {
     const config = vscode.workspace.getConfiguration("aiBuddy");
     const voiceGender = config.get("voiceGender", "female");
+    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
     this.postMessage({
       type: "workspaceAlert",
       text,
       emotion,
-      voiceGender
+      voiceGender,
+      audioData: realClip
     });
   }
   _getHtmlForWebview(webview) {
@@ -2141,6 +2151,74 @@ var ProactiveDecisionEngine = class {
   }
 };
 
+// src/extension/services/audioClipsService.ts
+var fs = __toESM(require("fs"));
+var path2 = __toESM(require("path"));
+var AudioClipsService = class {
+  baseDirs = [];
+  lastPlayedIndex = /* @__PURE__ */ new Map();
+  constructor(workspaceRoot) {
+    if (workspaceRoot) {
+      this.baseDirs.push(path2.join(workspaceRoot, "trainingVoice"));
+      this.baseDirs.push(path2.join(workspaceRoot, "media", "voices"));
+    }
+  }
+  addSearchDirectory(dir) {
+    if (fs.existsSync(dir) && !this.baseDirs.includes(dir)) {
+      this.baseDirs.push(dir);
+    }
+  }
+  /**
+   * Find all audio files for the given persona across trainingVoice/ and media/voices/
+   */
+  getClipsForPersona(persona) {
+    const audioFiles = [];
+    const targetFolder = persona === "female" ? "maya" : persona === "male" ? "vadivelu" : persona;
+    for (const baseDir of this.baseDirs) {
+      const personaDir = path2.join(baseDir, targetFolder);
+      if (fs.existsSync(personaDir)) {
+        try {
+          const files = fs.readdirSync(personaDir);
+          for (const file of files) {
+            const ext = path2.extname(file).toLowerCase();
+            if ([".mp3", ".wav", ".ogg", ".m4a"].includes(ext)) {
+              audioFiles.push(path2.join(personaDir, file));
+            }
+          }
+        } catch (e) {
+          console.warn(`[AudioClipsService] Failed to read dir ${personaDir}:`, e);
+        }
+      }
+    }
+    return audioFiles;
+  }
+  /**
+   * Return a base64 Data URI of a real audio clip for the given persona
+   */
+  getRandomClipDataUri(persona) {
+    const clips = this.getClipsForPersona(persona);
+    if (clips.length === 0) {
+      return void 0;
+    }
+    let currentIndex = this.lastPlayedIndex.get(persona) ?? -1;
+    let nextIndex = (currentIndex + 1) % clips.length;
+    this.lastPlayedIndex.set(persona, nextIndex);
+    const chosenFile = clips[nextIndex];
+    try {
+      const buffer = fs.readFileSync(chosenFile);
+      const ext = path2.extname(chosenFile).toLowerCase().replace(".", "");
+      const mime = ext === "wav" ? "audio/wav" : ext === "ogg" ? "audio/ogg" : "audio/mp3";
+      return `data:${mime};base64,${buffer.toString("base64")}`;
+    } catch (err) {
+      console.error(`[AudioClipsService] Error reading audio file ${chosenFile}:`, err);
+      return void 0;
+    }
+  }
+  hasClips(persona) {
+    return this.getClipsForPersona(persona).length > 0;
+  }
+};
+
 // src/extension/extension.ts
 function activate(context) {
   console.log("AI Buddy activating with Proactive Personality & Humour Engine...");
@@ -2148,6 +2226,12 @@ function activate(context) {
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
   const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);
+  const audioClipsService = new AudioClipsService(context.extensionPath);
+  if (vscode6.workspace.workspaceFolders) {
+    for (const folder of vscode6.workspace.workspaceFolders) {
+      audioClipsService.addSearchDirectory(folder.uri.fsPath);
+    }
+  }
   let characterProvider;
   const proactiveEngine = new ProactiveDecisionEngine(
     personalityEngine,
@@ -2168,7 +2252,8 @@ function activate(context) {
     geminiService,
     contextEngine,
     personalityEngine,
-    proactiveEngine
+    proactiveEngine,
+    audioClipsService
   );
   const workspaceMonitor = new WorkspaceMonitorService(contextEngine, proactiveEngine, {
     onContextChanged: (summary) => {

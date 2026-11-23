@@ -6,6 +6,7 @@ import { ContextEngine } from './services/contextEngine';
 import { WorkspaceMonitorService } from './services/workspaceMonitor';
 import { PersonalityEngine } from './services/personalityEngine';
 import { ProactiveDecisionEngine } from './services/proactiveEngine';
+import { AudioClipsService } from './services/audioClipsService';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('AI Buddy activating with Proactive Personality & Humour Engine...');
@@ -14,6 +15,14 @@ export function activate(context: vscode.ExtensionContext) {
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
   const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);
+
+  // Initialize Dynamic Audio Clips Service
+  const audioClipsService = new AudioClipsService(context.extensionPath);
+  if (vscode.workspace.workspaceFolders) {
+    for (const folder of vscode.workspace.workspaceFolders) {
+      audioClipsService.addSearchDirectory(folder.uri.fsPath);
+    }
+  }
 
   // Declare characterProvider reference
   let characterProvider: CharacterViewProvider;
@@ -39,7 +48,8 @@ export function activate(context: vscode.ExtensionContext) {
     geminiService,
     contextEngine,
     personalityEngine,
-    proactiveEngine
+    proactiveEngine,
+    audioClipsService
   );
 
   // Initialize Workspace Monitor with debounced callbacks

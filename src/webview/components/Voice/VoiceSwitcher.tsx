@@ -1,6 +1,3 @@
-import React from 'react';
-import { VoiceGender } from '../../../shared/types';
-import { Sparkles, User } from 'lucide-react';
 
 interface VoiceSwitcherProps {
   gender: VoiceGender;

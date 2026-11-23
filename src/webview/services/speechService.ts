@@ -121,6 +121,52 @@ export class SpeechService {
 
   private audioContext: AudioContext | null = null;
   private currentAudioSource: AudioBufferSourceNode | null = null;
+  private currentAudioElement: HTMLAudioElement | null = null;
+
+  public playAudioClip(
+    audioData: string,
+    onStart: () => void,
+    onMouthViseme: (open: boolean) => void,
+    onEnd: () => void
+  ): boolean {
+    try {
+      this.stopSpeaking();
+      const src = audioData.startsWith('data:') ? audioData : `data:audio/mp3;base64,${audioData}`;
+      const audio = new Audio(src);
+      this.currentAudioElement = audio;
+
+      audio.onplay = () => {
+        this.isSpeaking = true;
+        onStart();
+        let mouthOpen = false;
+        this.mouthAnimInterval = setInterval(() => {
+          mouthOpen = !mouthOpen;
+          onMouthViseme(mouthOpen);
+        }, 140);
+      };
+
+      audio.onended = () => {
+        this.currentAudioElement = null;
+        this.cleanupSpeech(onEnd, onMouthViseme);
+      };
+
+      audio.onerror = (e) => {
+        console.warn('Audio clip playback failed:', e);
+        this.currentAudioElement = null;
+        this.cleanupSpeech(onEnd, onMouthViseme);
+      };
+
+      audio.play().catch(err => {
+        console.warn('audio.play() error:', err);
+        this.cleanupSpeech(onEnd, onMouthViseme);
+      });
+      return true;
+    } catch (e) {
+      console.warn('Failed to initialize Audio element:', e);
+      this.cleanupSpeech(onEnd, onMouthViseme);
+      return false;
+    }
+  }
 
   public async playPcmAudio(
     base64Data: string,
@@ -300,6 +346,13 @@ export class SpeechService {
   }
 
   public stopSpeaking() {
+    if (this.currentAudioElement) {
+      try {
+        this.currentAudioElement.pause();
+        this.currentAudioElement.currentTime = 0;
+      } catch (e) {}
+      this.currentAudioElement = null;
+    }
     if (this.currentAudioSource) {
       try {
         this.currentAudioSource.stop();

@@ -12,6 +12,7 @@ import { SecretStorageService } from '../services/secretStorage';
 import { ContextEngine } from '../services/contextEngine';
 import { PersonalityEngine } from '../services/personalityEngine';
 import { ProactiveDecisionEngine } from '../services/proactiveEngine';
+import { AudioClipsService } from '../services/audioClipsService';
 
 export class CharacterViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiBuddy.characterView';
@@ -23,7 +24,8 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     private readonly _geminiService: GeminiService,
     private readonly _contextEngine: ContextEngine,
     private readonly _personalityEngine: PersonalityEngine,
-    private readonly _proactiveEngine: ProactiveDecisionEngine
+    private readonly _proactiveEngine: ProactiveDecisionEngine,
+    private readonly _audioClipsService?: AudioClipsService
   ) {}
 
   public resolveWebviewView(
@@ -83,12 +85,13 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           summary
         );
 
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData,
+          audioData: realClip || reply.audioData,
         });
         break;
       }
@@ -96,11 +99,13 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       case 'tellJoke': {
         this._proactiveEngine.recordUserActivity();
         const joke = this._personalityEngine.getRandomJoke();
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: joke.text,
           emotion: joke.emotion,
           voiceGender,
+          audioData: realClip,
         });
         break;
       }
@@ -122,13 +127,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData,
+          audioData: realClip || reply.audioData,
         });
         break;
       }
@@ -143,13 +149,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
+        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: reply.audioData,
+          audioData: realClip || reply.audioData,
         });
         break;
       }
@@ -201,24 +208,28 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     voiceGender: VoiceGender,
     category: string
   ): void {
+    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
     this.postMessage({
       type: 'proactiveSpeech',
       text,
       emotion,
       voiceGender,
       category,
+      audioData: realClip,
     });
   }
 
   public sendWorkspaceAlert(text: string, emotion: CharacterState): void {
     const config = vscode.workspace.getConfiguration('aiBuddy');
     const voiceGender = config.get<VoiceGender>('voiceGender', 'female');
+    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
 
     this.postMessage({
       type: 'workspaceAlert',
       text,
       emotion,
       voiceGender,
+      audioData: realClip,
     });
   }
 

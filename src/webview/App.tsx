@@ -46,6 +46,39 @@ export const App: React.FC = () => {
     // Notify extension host that webview is mounted & ready
     vscode.postMessage({ type: 'ready' });
 
+    const playAudioOrSpeech = (
+      text: string,
+      audioData?: string,
+      gender?: VoiceGender
+    ) => {
+      if (quietMode || !speechServiceRef.current) {
+        setTimeout(() => setCharacterState('idle'), 3500);
+        return;
+      }
+
+      const onStart = () => setIsSpeaking(true);
+      const onViseme = (open: boolean) => setIsMouthOpen(open);
+      const onEnd = () => {
+        setIsSpeaking(false);
+        setIsMouthOpen(false);
+        setCharacterState('idle');
+      };
+
+      if (audioData) {
+        if (audioData.startsWith('data:audio/')) {
+          speechServiceRef.current.playAudioClip(audioData, onStart, onViseme, onEnd);
+          return;
+        }
+        speechServiceRef.current.playPcmAudio(audioData, 24000, onStart, onViseme, onEnd).then(ok => {
+          if (!ok && speechServiceRef.current) {
+            speechServiceRef.current.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+          }
+        });
+      } else {
+        speechServiceRef.current.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+      }
+    };
+
     // Handle messages coming from Extension Host
     const unsubscribe = subscribeToHostMessages((message: HostToWebviewMessage) => {
       switch (message.type) {
@@ -91,34 +124,7 @@ export const App: React.FC = () => {
             },
           ]);
 
-          // Trigger speech playback if not quiet mode
-          if (!quietMode && speechServiceRef.current) {
-            const onStart = () => setIsSpeaking(true);
-            const onViseme = (open: boolean) => setIsMouthOpen(open);
-            const onEnd = () => {
-              setIsSpeaking(false);
-              setIsMouthOpen(false);
-              setCharacterState('idle');
-            };
-
-            if (message.audioData) {
-              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
-                if (!ok && speechServiceRef.current) {
-                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                }
-              });
-            } else {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                onStart,
-                onViseme,
-                onEnd
-              );
-            }
-          } else {
-            setTimeout(() => setCharacterState('idle'), 3500);
-          }
+          playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
           break;
         }
 
@@ -138,33 +144,7 @@ export const App: React.FC = () => {
             },
           ]);
 
-          if (!quietMode && speechServiceRef.current) {
-            const onStart = () => setIsSpeaking(true);
-            const onViseme = (open: boolean) => setIsMouthOpen(open);
-            const onEnd = () => {
-              setIsSpeaking(false);
-              setIsMouthOpen(false);
-              setCharacterState('idle');
-            };
-
-            if (message.audioData) {
-              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
-                if (!ok && speechServiceRef.current) {
-                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                }
-              });
-            } else {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                onStart,
-                onViseme,
-                onEnd
-              );
-            }
-          } else {
-            setTimeout(() => setCharacterState('idle'), 4000);
-          }
+          playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
           break;
         }
 
@@ -183,31 +163,7 @@ export const App: React.FC = () => {
             },
           ]);
 
-          if (!quietMode && speechServiceRef.current) {
-            const onStart = () => setIsSpeaking(true);
-            const onViseme = (open: boolean) => setIsMouthOpen(open);
-            const onEnd = () => {
-              setIsSpeaking(false);
-              setIsMouthOpen(false);
-              setCharacterState('idle');
-            };
-
-            if (message.audioData) {
-              speechServiceRef.current.playPcmAudio(message.audioData, 24000, onStart, onViseme, onEnd).then(ok => {
-                if (!ok && speechServiceRef.current) {
-                  speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                }
-              });
-            } else {
-              speechServiceRef.current.speak(
-                message.text,
-                message.voiceGender || voiceGender,
-                onStart,
-                onViseme,
-                onEnd
-              );
-            }
-          }
+          playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
           break;
         }
 

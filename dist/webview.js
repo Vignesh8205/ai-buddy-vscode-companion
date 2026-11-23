@@ -7411,6 +7411,42 @@
     }
     audioContext = null;
     currentAudioSource = null;
+    currentAudioElement = null;
+    playAudioClip(audioData, onStart, onMouthViseme, onEnd) {
+      try {
+        this.stopSpeaking();
+        const src = audioData.startsWith("data:") ? audioData : `data:audio/mp3;base64,${audioData}`;
+        const audio = new Audio(src);
+        this.currentAudioElement = audio;
+        audio.onplay = () => {
+          this.isSpeaking = true;
+          onStart();
+          let mouthOpen = false;
+          this.mouthAnimInterval = setInterval(() => {
+            mouthOpen = !mouthOpen;
+            onMouthViseme(mouthOpen);
+          }, 140);
+        };
+        audio.onended = () => {
+          this.currentAudioElement = null;
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        };
+        audio.onerror = (e) => {
+          console.warn("Audio clip playback failed:", e);
+          this.currentAudioElement = null;
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        };
+        audio.play().catch((err) => {
+          console.warn("audio.play() error:", err);
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        });
+        return true;
+      } catch (e) {
+        console.warn("Failed to initialize Audio element:", e);
+        this.cleanupSpeech(onEnd, onMouthViseme);
+        return false;
+      }
+    }
     async playPcmAudio(base64Data, sampleRate = 24e3, onStart, onMouthViseme, onEnd) {
       try {
         this.stopSpeaking();
@@ -7529,6 +7565,14 @@
       onEnd();
     }
     stopSpeaking() {
+      if (this.currentAudioElement) {
+        try {
+          this.currentAudioElement.pause();
+          this.currentAudioElement.currentTime = 0;
+        } catch (e) {
+        }
+        this.currentAudioElement = null;
+      }
       if (this.currentAudioSource) {
         try {
           this.currentAudioSource.stop();
@@ -8718,6 +8762,32 @@
       speechServiceRef.current = new SpeechService();
       const vscode = getVsCodeApi();
       vscode.postMessage({ type: "ready" });
+      const playAudioOrSpeech = (text, audioData, gender) => {
+        if (quietMode || !speechServiceRef.current) {
+          setTimeout(() => setCharacterState("idle"), 3500);
+          return;
+        }
+        const onStart = () => setIsSpeaking(true);
+        const onViseme = (open) => setIsMouthOpen(open);
+        const onEnd = () => {
+          setIsSpeaking(false);
+          setIsMouthOpen(false);
+          setCharacterState("idle");
+        };
+        if (audioData) {
+          if (audioData.startsWith("data:audio/")) {
+            speechServiceRef.current.playAudioClip(audioData, onStart, onViseme, onEnd);
+            return;
+          }
+          speechServiceRef.current.playPcmAudio(audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
+            if (!ok && speechServiceRef.current) {
+              speechServiceRef.current.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+            }
+          });
+        } else {
+          speechServiceRef.current.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+        }
+      };
       const unsubscribe = subscribeToHostMessages((message) => {
         switch (message.type) {
           case "init":
@@ -8755,32 +8825,7 @@
                 emotion: message.emotion
               }
             ]);
-            if (!quietMode && speechServiceRef.current) {
-              const onStart = () => setIsSpeaking(true);
-              const onViseme = (open) => setIsMouthOpen(open);
-              const onEnd = () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState("idle");
-              };
-              if (message.audioData) {
-                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
-                  if (!ok && speechServiceRef.current) {
-                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                  }
-                });
-              } else {
-                speechServiceRef.current.speak(
-                  message.text,
-                  message.voiceGender || voiceGender,
-                  onStart,
-                  onViseme,
-                  onEnd
-                );
-              }
-            } else {
-              setTimeout(() => setCharacterState("idle"), 3500);
-            }
+            playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
             break;
           }
           case "proactiveSpeech": {
@@ -8797,32 +8842,7 @@
                 category: message.category
               }
             ]);
-            if (!quietMode && speechServiceRef.current) {
-              const onStart = () => setIsSpeaking(true);
-              const onViseme = (open) => setIsMouthOpen(open);
-              const onEnd = () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState("idle");
-              };
-              if (message.audioData) {
-                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
-                  if (!ok && speechServiceRef.current) {
-                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                  }
-                });
-              } else {
-                speechServiceRef.current.speak(
-                  message.text,
-                  message.voiceGender || voiceGender,
-                  onStart,
-                  onViseme,
-                  onEnd
-                );
-              }
-            } else {
-              setTimeout(() => setCharacterState("idle"), 4e3);
-            }
+            playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
             break;
           }
           case "workspaceAlert": {
@@ -8838,30 +8858,7 @@
                 emotion: message.emotion
               }
             ]);
-            if (!quietMode && speechServiceRef.current) {
-              const onStart = () => setIsSpeaking(true);
-              const onViseme = (open) => setIsMouthOpen(open);
-              const onEnd = () => {
-                setIsSpeaking(false);
-                setIsMouthOpen(false);
-                setCharacterState("idle");
-              };
-              if (message.audioData) {
-                speechServiceRef.current.playPcmAudio(message.audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
-                  if (!ok && speechServiceRef.current) {
-                    speechServiceRef.current.speak(message.text, message.voiceGender || voiceGender, onStart, onViseme, onEnd);
-                  }
-                });
-              } else {
-                speechServiceRef.current.speak(
-                  message.text,
-                  message.voiceGender || voiceGender,
-                  onStart,
-                  onViseme,
-                  onEnd
-                );
-              }
-            }
+            playAudioOrSpeech(message.text, message.audioData, message.voiceGender);
             break;
           }
           case "apiKeyStatus":
