@@ -65,8 +65,20 @@ export const App: React.FC = () => {
       };
 
       if (audioData) {
-        if (audioData.startsWith('data:audio/')) {
-          speechServiceRef.current.playAudioClip(audioData, onStart, onViseme, onEnd);
+        if (
+          audioData.startsWith('data:audio/') ||
+          audioData.startsWith('vscode-webview-resource:') ||
+          audioData.startsWith('http')
+        ) {
+          speechServiceRef.current.playAudioClip(
+            audioData,
+            onStart,
+            onViseme,
+            onEnd,
+            () => {
+              speechServiceRef.current?.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+            }
+          );
           return;
         }
         speechServiceRef.current.playPcmAudio(audioData, 24000, onStart, onViseme, onEnd).then(ok => {
@@ -302,26 +314,21 @@ export const App: React.FC = () => {
   const handleVoiceSwitch = (gender: VoiceGender) => {
     setVoiceGender(gender);
     getVsCodeApi().postMessage({ type: 'setVoice', gender });
-    const greeting =
-      gender === 'female'
-        ? 'Heyyy! Naan Maya! Energetic-ah code pannuvoma? ✨'
-        : 'Vanakkam bro! Naan Vikram! Tech bugs-ah therikka viduvom! 🚀';
+
+    let greeting = 'Heyyy! Naan Maya! Jolly-ah code pannuvoma? 🌸';
+    if (gender === 'vadivelu') {
+      greeting = 'Aahaa! Vandhutan da vandhutan da! Naan thaan unga Vadivelu! 😂';
+    } else if (gender === 'santhanam') {
+      greeting = 'Nanba! Naan Santhanam! Innaiku terminal-ah therikka viduvom! 😎';
+    } else if (gender === 'small_boy') {
+      greeting = 'Anna anna! Naan Chotu! Enna super game develop panroma? 👦';
+    }
+
     setCurrentText(greeting);
     setCharacterState('happy');
 
-    if (!quietMode && speechServiceRef.current) {
-      speechServiceRef.current.speak(
-        greeting,
-        gender,
-        () => setIsSpeaking(true),
-        open => setIsMouthOpen(open),
-        () => {
-          setIsSpeaking(false);
-          setIsMouthOpen(false);
-          setCharacterState('idle');
-        }
-      );
-    }
+    // Request immediate voice dialogue so the real training audio clip plays!
+    getVsCodeApi().postMessage({ type: 'tellJoke' });
   };
 
   // Save API Key

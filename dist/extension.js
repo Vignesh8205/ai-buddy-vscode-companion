@@ -50,21 +50,36 @@ var CharacterViewProvider = class {
   }
   static viewType = "aiBuddy.characterView";
   _view;
+  _currentVoiceGender;
   resolveWebviewView(webviewView, _context, _token) {
     this._view = webviewView;
+    const localResourceRoots = [this._extensionUri];
+    if (vscode.workspace.workspaceFolders) {
+      for (const folder of vscode.workspace.workspaceFolders) {
+        localResourceRoots.push(folder.uri);
+      }
+    }
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this._extensionUri]
+      localResourceRoots
     };
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
     webviewView.webview.onDidReceiveMessage(async (data) => {
       await this._handleWebviewMessage(data);
     });
   }
+  _getAudioClipForPersona(persona) {
+    if (!this._audioClipsService) return void 0;
+    const clipFile = this._audioClipsService.getRandomClipFile(persona);
+    if (clipFile && this._view) {
+      return this._view.webview.asWebviewUri(vscode.Uri.file(clipFile)).toString();
+    }
+    return this._audioClipsService.getRandomClipDataUri(persona);
+  }
   async _handleWebviewMessage(message) {
     if (!this._view) return;
     const config = vscode.workspace.getConfiguration("aiBuddy");
-    const voiceGender = config.get("voiceGender", "female");
+    const voiceGender = this._currentVoiceGender || config.get("voiceGender", "vadivelu");
     const modelName = config.get("geminiModel", "gemini-3.5-flash");
     const proactiveFrequency = config.get("conversationFrequency", "medium");
     switch (message.type) {
@@ -93,7 +108,7 @@ var CharacterViewProvider = class {
           modelName,
           summary
         );
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -106,7 +121,7 @@ var CharacterViewProvider = class {
       case "tellJoke": {
         this._proactiveEngine.recordUserActivity();
         const joke = this._personalityEngine.getRandomJoke();
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: joke.text,
@@ -130,7 +145,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -148,7 +163,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -159,6 +174,7 @@ var CharacterViewProvider = class {
         break;
       }
       case "setVoice": {
+        this._currentVoiceGender = message.gender;
         await config.update("voiceGender", message.gender, vscode.ConfigurationTarget.Global);
         this.postMessage({ type: "voiceChanged", gender: message.gender });
         break;
@@ -194,7 +210,7 @@ var CharacterViewProvider = class {
     });
   }
   sendProactiveSpeech(text, emotion, voiceGender, category) {
-    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+    const realClip = this._getAudioClipForPersona(voiceGender);
     this.postMessage({
       type: "proactiveSpeech",
       text,
@@ -206,8 +222,8 @@ var CharacterViewProvider = class {
   }
   sendWorkspaceAlert(text, emotion) {
     const config = vscode.workspace.getConfiguration("aiBuddy");
-    const voiceGender = config.get("voiceGender", "female");
-    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+    const voiceGender = this._currentVoiceGender || config.get("voiceGender", "vadivelu");
+    const realClip = this._getAudioClipForPersona(voiceGender);
     this.postMessage({
       type: "workspaceAlert",
       text,
@@ -229,7 +245,7 @@ var CharacterViewProvider = class {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src ${webview.cspSource} https: blob:; connect-src ${webview.cspSource} https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src ${webview.cspSource} https: blob: data:; connect-src ${webview.cspSource} https: data: blob:;">
   <link rel="stylesheet" href="${styleUri}">
   <title>AI Buddy</title>
 </head>
@@ -2159,17 +2175,20 @@ var AudioClipsService = class {
   lastPlayedIndex = /* @__PURE__ */ new Map();
   constructor(workspaceRoot) {
     if (workspaceRoot) {
-      this.baseDirs.push(path2.join(workspaceRoot, "trainingVoice"));
-      this.baseDirs.push(path2.join(workspaceRoot, "media", "voices"));
+      this.addSearchDirectory(workspaceRoot);
     }
   }
   addSearchDirectory(dir) {
-    if (fs.existsSync(dir) && !this.baseDirs.includes(dir)) {
-      this.baseDirs.push(dir);
+    if (fs.existsSync(dir)) {
+      if (!this.baseDirs.includes(dir)) this.baseDirs.push(dir);
+      const tv = path2.join(dir, "trainingVoice");
+      if (fs.existsSync(tv) && !this.baseDirs.includes(tv)) this.baseDirs.push(tv);
+      const mv = path2.join(dir, "media", "voices");
+      if (fs.existsSync(mv) && !this.baseDirs.includes(mv)) this.baseDirs.push(mv);
     }
   }
   /**
-   * Find all audio files for the given persona across trainingVoice/ and media/voices/
+   * Find all unique audio files for the given persona across trainingVoice/ and media/voices/
    */
   getClipsForPersona(persona) {
     const audioFiles = [];
@@ -2190,12 +2209,21 @@ var AudioClipsService = class {
         }
       }
     }
-    return audioFiles;
+    const seenNames = /* @__PURE__ */ new Set();
+    const uniqueFiles = [];
+    for (const file of audioFiles) {
+      const name = path2.basename(file).toLowerCase();
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+        uniqueFiles.push(file);
+      }
+    }
+    return uniqueFiles;
   }
   /**
-   * Return a base64 Data URI of a real audio clip for the given persona
+   * Return the absolute file path of a clip
    */
-  getRandomClipDataUri(persona) {
+  getRandomClipFile(persona) {
     const clips = this.getClipsForPersona(persona);
     if (clips.length === 0) {
       return void 0;
@@ -2203,7 +2231,14 @@ var AudioClipsService = class {
     let currentIndex = this.lastPlayedIndex.get(persona) ?? -1;
     let nextIndex = (currentIndex + 1) % clips.length;
     this.lastPlayedIndex.set(persona, nextIndex);
-    const chosenFile = clips[nextIndex];
+    return clips[nextIndex];
+  }
+  /**
+   * Return a base64 Data URI of a real audio clip for the given persona
+   */
+  getRandomClipDataUri(persona) {
+    const chosenFile = this.getRandomClipFile(persona);
+    if (!chosenFile) return void 0;
     try {
       const buffer = fs.readFileSync(chosenFile);
       const ext = path2.extname(chosenFile).toLowerCase().replace(".", "");

@@ -7412,10 +7412,10 @@
     audioContext = null;
     currentAudioSource = null;
     currentAudioElement = null;
-    playAudioClip(audioData, onStart, onMouthViseme, onEnd) {
+    playAudioClip(audioData, onStart, onMouthViseme, onEnd, onFallback) {
       try {
         this.stopSpeaking();
-        const src = audioData.startsWith("data:") ? audioData : `data:audio/mp3;base64,${audioData}`;
+        const src = audioData.startsWith("http") || audioData.startsWith("vscode-webview-resource:") || audioData.startsWith("data:") ? audioData : `data:audio/mp3;base64,${audioData}`;
         const audio = new Audio(src);
         this.currentAudioElement = audio;
         audio.onplay = () => {
@@ -7434,16 +7434,32 @@
         audio.onerror = (e) => {
           console.warn("Audio clip playback failed:", e);
           this.currentAudioElement = null;
-          this.cleanupSpeech(onEnd, onMouthViseme);
+          if (onFallback) {
+            onFallback();
+          } else {
+            this.cleanupSpeech(onEnd, onMouthViseme);
+          }
         };
-        audio.play().catch((err) => {
-          console.warn("audio.play() error:", err);
-          this.cleanupSpeech(onEnd, onMouthViseme);
-        });
+        const playPromise = audio.play();
+        if (playPromise !== void 0) {
+          playPromise.catch((err) => {
+            console.warn("audio.play() rejected:", err);
+            this.currentAudioElement = null;
+            if (onFallback) {
+              onFallback();
+            } else {
+              this.cleanupSpeech(onEnd, onMouthViseme);
+            }
+          });
+        }
         return true;
       } catch (e) {
         console.warn("Failed to initialize Audio element:", e);
-        this.cleanupSpeech(onEnd, onMouthViseme);
+        if (onFallback) {
+          onFallback();
+        } else {
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        }
         return false;
       }
     }
@@ -8775,8 +8791,16 @@
           setCharacterState("idle");
         };
         if (audioData) {
-          if (audioData.startsWith("data:audio/")) {
-            speechServiceRef.current.playAudioClip(audioData, onStart, onViseme, onEnd);
+          if (audioData.startsWith("data:audio/") || audioData.startsWith("vscode-webview-resource:") || audioData.startsWith("http")) {
+            speechServiceRef.current.playAudioClip(
+              audioData,
+              onStart,
+              onViseme,
+              onEnd,
+              () => {
+                speechServiceRef.current?.speak(text, gender || voiceGender, onStart, onViseme, onEnd);
+              }
+            );
             return;
           }
           speechServiceRef.current.playPcmAudio(audioData, 24e3, onStart, onViseme, onEnd).then((ok) => {
@@ -8971,22 +8995,17 @@
     const handleVoiceSwitch = (gender) => {
       setVoiceGender(gender);
       getVsCodeApi().postMessage({ type: "setVoice", gender });
-      const greeting = gender === "female" ? "Heyyy! Naan Maya! Energetic-ah code pannuvoma? \u2728" : "Vanakkam bro! Naan Vikram! Tech bugs-ah therikka viduvom! \u{1F680}";
+      let greeting = "Heyyy! Naan Maya! Jolly-ah code pannuvoma? \u{1F338}";
+      if (gender === "vadivelu") {
+        greeting = "Aahaa! Vandhutan da vandhutan da! Naan thaan unga Vadivelu! \u{1F602}";
+      } else if (gender === "santhanam") {
+        greeting = "Nanba! Naan Santhanam! Innaiku terminal-ah therikka viduvom! \u{1F60E}";
+      } else if (gender === "small_boy") {
+        greeting = "Anna anna! Naan Chotu! Enna super game develop panroma? \u{1F466}";
+      }
       setCurrentText(greeting);
       setCharacterState("happy");
-      if (!quietMode && speechServiceRef.current) {
-        speechServiceRef.current.speak(
-          greeting,
-          gender,
-          () => setIsSpeaking(true),
-          (open) => setIsMouthOpen(open),
-          () => {
-            setIsSpeaking(false);
-            setIsMouthOpen(false);
-            setCharacterState("idle");
-          }
-        );
-      }
+      getVsCodeApi().postMessage({ type: "tellJoke" });
     };
     const handleSaveApiKey = (key) => {
       getVsCodeApi().postMessage({ type: "setApiKey", key });

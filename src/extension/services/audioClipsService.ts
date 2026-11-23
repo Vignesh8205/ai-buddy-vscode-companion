@@ -8,19 +8,22 @@ export class AudioClipsService {
 
   constructor(workspaceRoot?: string) {
     if (workspaceRoot) {
-      this.baseDirs.push(path.join(workspaceRoot, 'trainingVoice'));
-      this.baseDirs.push(path.join(workspaceRoot, 'media', 'voices'));
+      this.addSearchDirectory(workspaceRoot);
     }
   }
 
   public addSearchDirectory(dir: string): void {
-    if (fs.existsSync(dir) && !this.baseDirs.includes(dir)) {
-      this.baseDirs.push(dir);
+    if (fs.existsSync(dir)) {
+      if (!this.baseDirs.includes(dir)) this.baseDirs.push(dir);
+      const tv = path.join(dir, 'trainingVoice');
+      if (fs.existsSync(tv) && !this.baseDirs.includes(tv)) this.baseDirs.push(tv);
+      const mv = path.join(dir, 'media', 'voices');
+      if (fs.existsSync(mv) && !this.baseDirs.includes(mv)) this.baseDirs.push(mv);
     }
   }
 
   /**
-   * Find all audio files for the given persona across trainingVoice/ and media/voices/
+   * Find all unique audio files for the given persona across trainingVoice/ and media/voices/
    */
   public getClipsForPersona(persona: VoiceGender): string[] {
     const audioFiles: string[] = [];
@@ -43,13 +46,24 @@ export class AudioClipsService {
       }
     }
 
-    return audioFiles;
+    // Deduplicate by filename
+    const seenNames = new Set<string>();
+    const uniqueFiles: string[] = [];
+    for (const file of audioFiles) {
+      const name = path.basename(file).toLowerCase();
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
   }
 
   /**
-   * Return a base64 Data URI of a real audio clip for the given persona
+   * Return the absolute file path of a clip
    */
-  public getRandomClipDataUri(persona: VoiceGender): string | undefined {
+  public getRandomClipFile(persona: VoiceGender): string | undefined {
     const clips = this.getClipsForPersona(persona);
     if (clips.length === 0) {
       return undefined;
@@ -59,7 +73,16 @@ export class AudioClipsService {
     let nextIndex = (currentIndex + 1) % clips.length;
     this.lastPlayedIndex.set(persona, nextIndex);
 
-    const chosenFile = clips[nextIndex];
+    return clips[nextIndex];
+  }
+
+  /**
+   * Return a base64 Data URI of a real audio clip for the given persona
+   */
+  public getRandomClipDataUri(persona: VoiceGender): string | undefined {
+    const chosenFile = this.getRandomClipFile(persona);
+    if (!chosenFile) return undefined;
+
     try {
       const buffer = fs.readFileSync(chosenFile);
       const ext = path.extname(chosenFile).toLowerCase().replace('.', '');

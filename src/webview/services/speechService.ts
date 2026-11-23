@@ -127,11 +127,17 @@ export class SpeechService {
     audioData: string,
     onStart: () => void,
     onMouthViseme: (open: boolean) => void,
-    onEnd: () => void
+    onEnd: () => void,
+    onFallback?: () => void
   ): boolean {
     try {
       this.stopSpeaking();
-      const src = audioData.startsWith('data:') ? audioData : `data:audio/mp3;base64,${audioData}`;
+      const src =
+        audioData.startsWith('http') ||
+        audioData.startsWith('vscode-webview-resource:') ||
+        audioData.startsWith('data:')
+          ? audioData
+          : `data:audio/mp3;base64,${audioData}`;
       const audio = new Audio(src);
       this.currentAudioElement = audio;
 
@@ -153,17 +159,33 @@ export class SpeechService {
       audio.onerror = (e) => {
         console.warn('Audio clip playback failed:', e);
         this.currentAudioElement = null;
-        this.cleanupSpeech(onEnd, onMouthViseme);
+        if (onFallback) {
+          onFallback();
+        } else {
+          this.cleanupSpeech(onEnd, onMouthViseme);
+        }
       };
 
-      audio.play().catch(err => {
-        console.warn('audio.play() error:', err);
-        this.cleanupSpeech(onEnd, onMouthViseme);
-      });
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn('audio.play() rejected:', err);
+          this.currentAudioElement = null;
+          if (onFallback) {
+            onFallback();
+          } else {
+            this.cleanupSpeech(onEnd, onMouthViseme);
+          }
+        });
+      }
       return true;
     } catch (e) {
       console.warn('Failed to initialize Audio element:', e);
-      this.cleanupSpeech(onEnd, onMouthViseme);
+      if (onFallback) {
+        onFallback();
+      } else {
+        this.cleanupSpeech(onEnd, onMouthViseme);
+      }
       return false;
     }
   }

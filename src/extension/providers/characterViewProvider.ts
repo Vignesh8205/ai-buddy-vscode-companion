@@ -17,6 +17,7 @@ import { AudioClipsService } from '../services/audioClipsService';
 export class CharacterViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiBuddy.characterView';
   private _view?: vscode.WebviewView;
+  private _currentVoiceGender?: VoiceGender;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -35,9 +36,16 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
   ): void {
     this._view = webviewView;
 
+    const localResourceRoots = [this._extensionUri];
+    if (vscode.workspace.workspaceFolders) {
+      for (const folder of vscode.workspace.workspaceFolders) {
+        localResourceRoots.push(folder.uri);
+      }
+    }
+
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this._extensionUri],
+      localResourceRoots,
     };
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
@@ -47,11 +55,20 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private _getAudioClipForPersona(persona: VoiceGender): string | undefined {
+    if (!this._audioClipsService) return undefined;
+    const clipFile = this._audioClipsService.getRandomClipFile(persona);
+    if (clipFile && this._view) {
+      return this._view.webview.asWebviewUri(vscode.Uri.file(clipFile)).toString();
+    }
+    return this._audioClipsService.getRandomClipDataUri(persona);
+  }
+
   private async _handleWebviewMessage(message: WebviewToHostMessage): Promise<void> {
     if (!this._view) return;
 
     const config = vscode.workspace.getConfiguration('aiBuddy');
-    const voiceGender = config.get<VoiceGender>('voiceGender', 'female');
+    const voiceGender = this._currentVoiceGender || config.get<VoiceGender>('voiceGender', 'vadivelu');
     const modelName = config.get<string>('geminiModel', 'gemini-3.5-flash');
     const proactiveFrequency = config.get<ProactiveFrequency>('conversationFrequency', 'medium');
 
@@ -85,7 +102,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           summary
         );
 
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
@@ -99,7 +116,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       case 'tellJoke': {
         this._proactiveEngine.recordUserActivity();
         const joke = this._personalityEngine.getRandomJoke();
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
         this.postMessage({
           type: 'characterReply',
           text: joke.text,
@@ -127,7 +144,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
 
         this.postMessage({
           type: 'characterReply',
@@ -149,7 +166,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+        const realClip = this._getAudioClipForPersona(voiceGender);
 
         this.postMessage({
           type: 'characterReply',
@@ -162,6 +179,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       }
 
       case 'setVoice': {
+        this._currentVoiceGender = message.gender;
         await config.update('voiceGender', message.gender, vscode.ConfigurationTarget.Global);
         this.postMessage({ type: 'voiceChanged', gender: message.gender });
         break;
@@ -208,7 +226,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     voiceGender: VoiceGender,
     category: string
   ): void {
-    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+    const realClip = this._getAudioClipForPersona(voiceGender);
     this.postMessage({
       type: 'proactiveSpeech',
       text,
@@ -221,8 +239,8 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
 
   public sendWorkspaceAlert(text: string, emotion: CharacterState): void {
     const config = vscode.workspace.getConfiguration('aiBuddy');
-    const voiceGender = config.get<VoiceGender>('voiceGender', 'female');
-    const realClip = this._audioClipsService?.getRandomClipDataUri(voiceGender);
+    const voiceGender = this._currentVoiceGender || config.get<VoiceGender>('voiceGender', 'vadivelu');
+    const realClip = this._getAudioClipForPersona(voiceGender);
 
     this.postMessage({
       type: 'workspaceAlert',
@@ -247,7 +265,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src ${webview.cspSource} https: blob:; connect-src ${webview.cspSource} https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; media-src ${webview.cspSource} https: blob: data:; connect-src ${webview.cspSource} https: data: blob:;">
   <link rel="stylesheet" href="${styleUri}">
   <title>AI Buddy</title>
 </head>
