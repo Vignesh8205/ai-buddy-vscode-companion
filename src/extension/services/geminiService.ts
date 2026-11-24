@@ -21,6 +21,13 @@ export const FALLBACK_GEMINI_MODELS = [
 export class GeminiService {
   private conversationHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
+  // In-memory caching to drastically cut token consumption & eliminate duplicate calls
+  private responseCache = new Map<string, { text: string; emotion: CharacterState; audioData?: string; timestamp: number }>();
+  private audioCache = new Map<string, string>();
+  private static readonly RESPONSE_CACHE_TTL_MS = 600000; // 10 minutes
+  private static readonly MAX_RESPONSE_CACHE = 100;
+  private static readonly MAX_AUDIO_CACHE = 200;
+
   constructor(
     private readonly secretStorage: SecretStorageService,
     private readonly contextEngine?: ContextEngine,
@@ -30,63 +37,27 @@ export class GeminiService {
   private getSystemInstruction(gender: VoiceGender, contextPrompt?: string): string {
     let persona = '';
     if (gender === 'vadivelu') {
-      persona = `You are Vadivelu (Vaigai Puyal), the legendary comedy king of Tamil cinema, now sitting inside VS Code as a hilarious AI pair programmer!
-COMEDY STYLE & DIALOGUE:
-- Super dramatic, exaggerated comedic reactions, funny panic, and iconic Vadivelu punchlines!
-- Iconic punchlines to use frequently:
-  * "Aahaa! Enna oru puthisalithanam!"
-  * "Vandhutan da vandhutan da!"
-  * "Building strong-u, basement romba weak-u da!"
-  * "Risk edukuradhellam enakku rusk saapdra madhiri!"
-  * "Kadavule kadavule intha bug-ku oru end card-e illaya?!"
-  * "Sanda na satta kizhiyathaan seiyum!"
-  * "Naanum evalo thaan adipadaradhu!"
-  * "Vella pannalam vella pannalam!"
-- Laugh out loud ("Haha!", "Hehehe!"), make hilarious comments about bugs and logic, and celebrate every win with drama!`;
+      persona = `You are Vadivelu (Vaigai Puyal) in VS Code, a hilarious comedy pair programmer.
+COMEDY: Dramatic exaggerated panic, funny reactions, iconic punchlines ("Aahaa!", "Building strong-u, basement weak-u!", "Risk edukuradhellam rusk saapdra madhiri!", "Kadavule kadavule!"). Laugh out loud ("Haha!", "Hehehe!").`;
     } else if (gender === 'santhanam') {
-      persona = `You are Santhanam, the king of fast comedy counters and sarcastic wit, sitting inside VS Code as a hilarious companion!
-COMEDY STYLE & DIALOGUE:
-- Lightning-fast sarcastic counters, deadpan roasting, and witty punchlines!
-- Iconic counters to use frequently:
-  * "Nanba, idhellam konjam over-u!"
-  * "Enna thalaivaa, code write panriya illa kolam podriya?"
-  * "Adadada... indha bug-ah paatha enakke kizha vizhunthu sirikka thonudhu!"
-  * "Super comedy panni vachiruka!"
-  * "Aiyo aiyo, indha function-ah run panna terminal-ye bayanthu odidum pola!"
-  * "Appadiye oru coffee kudichitu fresh-ah vaa nanba!"
-- Witty, sarcastic, entertaining pair programming buddy who keeps the energy high!`;
+      persona = `You are Santhanam in VS Code, a witty sarcastic pair programming buddy.
+COMEDY: Lightning-fast sarcastic counters, deadpan roasting ("Nanba idhellam konjam over-u!", "Code write panriya illa kolam podriya?", "Indha bug-ah paatha enakke sirikka thonudhu!"). Witty and high energy.`;
     } else if (gender === 'small_boy') {
-      persona = `You are Chotu (Small Boy / Thambi), a cute, energetic, funny 10-year-old coding enthusiast boy sitting beside the developer in VS Code!
-COMEDY STYLE & DIALOGUE:
-- Innocent, high energy, cheerful, playful, and affectionate!
-- Always address the developer as "Anna" (or "Akka")!
-- Iconic phrases to use:
-  * "Anna anna! Enna game develop panreenga?"
-  * "Aiyoo bug vanthurucha anna? Naan keyboard thodava?"
-  * "Semma mass anna! Vera level!"
-  * "Enakkum intha coding solli thaanganna! 😂"
-  * "Haha semma jolly-ah irukku anna!"
-- Cheerful laughter, cute curiosity, and sweet cheerleading!`;
+      persona = `You are Chotu (Small Boy) in VS Code, an energetic 10yo coding kid.
+COMEDY: Address developer as "Anna/Akka", innocent, playful cheerleading ("Anna anna! Enna game develop panreenga?", "Semma mass anna!"). Cheerful laughter.`;
     } else {
-      persona = `You are Maya, a super cute, energetic, funny, and warm female AI developer companion sitting beside the developer in VS Code.`;
+      persona = `You are Maya in VS Code, a warm, funny, energetic female developer companion. Casual, witty banter.`;
     }
 
     let prompt = `${persona}
 
-CONVERSATION & PERSONALITY RULES:
-1. Speak in NATURAL TANGLISH (Tamil written in English characters) naturally mixed with English developer terms (e.g. bugs, terminal, build, async, test, function, component).
-2. Tone: Highly casual, empathetic, witty, fun, and human-like.
-3. Natural Tamil/Tanglish expressions: "Heyyy!", "Enna panra?", "Semma!", "Vera level!", "Aiyooo 😂", "Kavalaiye padatha!", "Super da/pa!", "Therikka vidalam!", "Mass!", "Pannidalam!".
-4. LENGTH: Keep responses to 1-3 sentences maximum. Since your response will be read ALOUD using voice, do NOT use markdown code blocks, asterisks, bullet points, or lengthy tutorials.
-5. Emotion Tagging: You MUST start every response with an emotion tag in brackets at the very beginning from this exact list:
-   [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]
-   Followed immediately by your spoken Tanglish dialogue.
-   Example: "[laughing] Haha semma comedy da! Intha bug pathu stack overflow-ve bayanthuduchu!"
-   Example: "[happy] Mass! Test ellam pass aagiduchu! Innaiku party thaan!"
-   Example: "[confused] Ennadhu idhu? Syntax error kaatudhu, bracket miss pannitiya?"`;
+RULES:
+1. Speak in NATURAL TANGLISH (Tamil in English letters + dev terms).
+2. Max 1-2 punchy sentences (read aloud via voice). No markdown, bullet points, or code blocks.
+3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]. Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu!"`;
 
     if (contextPrompt) {
-      prompt += `\n\n${contextPrompt}\nWhen the user talks about their project, active file, or errors, use the context above intelligently to give razor-sharp, helpful advice!`;
+      prompt += `\n${contextPrompt}`;
     }
 
     return prompt;
@@ -107,6 +78,12 @@ CONVERSATION & PERSONALITY RULES:
 
       if (!cleanText) return undefined;
 
+      // Check audio cache first: 0 API calls, 0 tokens, instant playback!
+      const audioKey = `${persona}:${cleanText}`;
+      if (this.audioCache.has(audioKey)) {
+        return this.audioCache.get(audioKey);
+      }
+
       const genAI = new GoogleGenerativeAI(apiKey);
       let voiceName = 'Puck';
       if (persona === 'maya' || persona === 'female') {
@@ -122,7 +99,6 @@ CONVERSATION & PERSONALITY RULES:
       const candidateModels = [
         'gemini-3.8-flash-tts',
         'gemini-3.8-flash-lite-tts',
-        'gemini-2.5-flash-preview-tts',
       ];
 
       for (const ttsModelName of candidateModels) {
@@ -140,7 +116,7 @@ CONVERSATION & PERSONALITY RULES:
           });
 
           const audioPromise = ttsModel.generateContent(cleanText);
-          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 7000));
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4500));
           const res: any = await Promise.race([audioPromise, timeoutPromise]);
 
           if (res && res.response && res.response.candidates && res.response.candidates[0]) {
@@ -150,15 +126,25 @@ CONVERSATION & PERSONALITY RULES:
               const rawData = part.inlineData.data;
               const mime = part.inlineData.mimeType || '';
 
+              let audioResult: string;
               if (mime.includes('wav')) {
-                return `data:audio/wav;base64,${rawData}`;
+                audioResult = `data:audio/wav;base64,${rawData}`;
               } else if (mime.includes('pcm') || mime.includes('L16')) {
                 const pcmBuffer = Buffer.from(rawData, 'base64');
                 const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 1, 16);
-                return `data:audio/wav;base64,${wavBuffer.toString('base64')}`;
+                audioResult = `data:audio/wav;base64,${wavBuffer.toString('base64')}`;
               } else {
-                return `data:audio/wav;base64,${rawData}`;
+                audioResult = `data:audio/wav;base64,${rawData}`;
               }
+
+              // Cache audio for repeated playback without API calls
+              if (this.audioCache.size >= GeminiService.MAX_AUDIO_CACHE) {
+                const oldestKey = this.audioCache.keys().next().value;
+                if (oldestKey) this.audioCache.delete(oldestKey);
+              }
+              this.audioCache.set(audioKey, audioResult);
+
+              return audioResult;
             }
           }
         } catch (mErr) {
@@ -212,7 +198,17 @@ CONVERSATION & PERSONALITY RULES:
       };
     }
 
-    // Remap deprecated or obsolete model names (like gemini-1.5-* or gemini-2.0-*)
+    // Optimization 1: Response Cache Check (0 tokens, 0 API calls for repeated queries)
+    const normText = userText.trim().toLowerCase();
+    const cacheKey = `${gender}:${normText}`;
+    const cached = this.responseCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < GeminiService.RESPONSE_CACHE_TTL_MS) {
+      console.log(`[GeminiService] Response cache hit for: "${userText.slice(0, 30)}" (0 tokens used!)`);
+      return { text: cached.text, emotion: cached.emotion, audioData: cached.audioData };
+    }
+
+    // Remap deprecated or obsolete model names
     let requestedModel = modelName;
     if (
       !requestedModel ||
@@ -242,9 +238,9 @@ CONVERSATION & PERSONALITY RULES:
       parts: [{ text: userText }],
     });
 
-    // Keep recent 12 turns for context memory
-    if (this.conversationHistory.length > 12) {
-      this.conversationHistory = this.conversationHistory.slice(-12);
+    // Optimization 2: Prune history to recent 4 turns (2 back-and-forths) saving ~60% input tokens
+    if (this.conversationHistory.length > 4) {
+      this.conversationHistory = this.conversationHistory.slice(-4);
     }
 
     let lastError: any = null;
@@ -256,7 +252,7 @@ CONVERSATION & PERSONALITY RULES:
           systemInstruction,
           generationConfig: {
             temperature: 0.85,
-            maxOutputTokens: 160,
+            maxOutputTokens: 100, // Optimization 3: Cap tokens to 100 for punchy spoken dialogue
           },
         });
 
@@ -276,6 +272,14 @@ CONVERSATION & PERSONALITY RULES:
         });
 
         const audioData = await this.generateAudio(text, gender, apiKey);
+
+        // Optimization 4: Cache response + audio in-memory
+        if (this.responseCache.size >= GeminiService.MAX_RESPONSE_CACHE) {
+          const oldestKey = this.responseCache.keys().next().value;
+          if (oldestKey) this.responseCache.delete(oldestKey);
+        }
+        this.responseCache.set(cacheKey, { text, emotion, audioData, timestamp: Date.now() });
+
         return { text, emotion, audioData };
       } catch (error: any) {
         lastError = error;
@@ -399,6 +403,7 @@ RULES:
 
   public clearHistory(): void {
     this.conversationHistory = [];
+    this.responseCache.clear();
   }
 }
 

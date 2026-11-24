@@ -2,7 +2,7 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { VoiceGender } from '../../shared/types';
 
 export class NeuralVoiceService {
-  private static readonly CACHE_LIMIT = 50;
+  private static readonly CACHE_LIMIT = 200;
   private audioCache = new Map<string, string>();
 
   /**
@@ -39,83 +39,90 @@ export class NeuralVoiceService {
         return this.audioCache.get(cacheKey);
       }
 
-      const tts = new MsEdgeTTS();
-
-      // Detect if text has Tamil Unicode script
-      const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
-
-      // STRICT RULE: pitch is +0Hz (zero pitch distortion to prevent robotic metallic / helium sound)
-      let voice = 'en-IN-PrabhatNeural';
-      let options = { pitch: '+0Hz', rate: '+0%' };
-
-      if (hasTamilScript) {
-        if (persona === 'maya' || persona === 'female' || persona === 'small_boy') {
-          voice = 'ta-IN-PallaviNeural';
-          options = { pitch: '+0Hz', rate: '+4%' };
-        } else {
-          voice = 'ta-IN-ValluvarNeural';
-          options = { pitch: '+0Hz', rate: '+4%' };
-        }
-      } else {
-        // Natural Indian English / Tanglish Expressive Voices
-        if (persona === 'small_boy') {
-          voice = 'en-IN-NeerjaExpressiveNeural';
-          options = { pitch: '+0Hz', rate: '+6%' };
-        } else if (persona === 'vadivelu') {
-          voice = 'en-IN-PrabhatNeural';
-          options = { pitch: '+0Hz', rate: '+6%' };
-        } else if (persona === 'santhanam') {
-          voice = 'en-IN-PrabhatNeural';
-          options = { pitch: '+0Hz', rate: '+12%' };
-        } else if (persona === 'male') {
-          voice = 'en-IN-PrabhatNeural';
-          options = { pitch: '+0Hz', rate: '+0%' };
-        } else {
-          // Maya / female
-          voice = 'en-IN-NeerjaExpressiveNeural';
-          options = { pitch: '+0Hz', rate: '+2%' };
-        }
-      }
-
-      await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-      const audioBuffer = await new Promise<Buffer>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          try { tts.close(); } catch {}
-          reject(new Error('Neural TTS timeout'));
-        }, 8000);
-
+      // Try synthesis with auto-retry on network disconnect
+      for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const { audioStream } = tts.toStream(cleanText, options);
-          const chunks: Buffer[] = [];
-          audioStream.on('data', chunk => chunks.push(chunk));
-          audioStream.on('end', () => {
-            clearTimeout(timeout);
-            try { tts.close(); } catch {}
-            resolve(Buffer.concat(chunks));
+          const tts = new MsEdgeTTS();
+
+          // Detect if text has Tamil Unicode script
+          const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
+
+          // STRICT RULE: pitch is +0Hz (zero pitch distortion to prevent robotic metallic / helium sound)
+          let voice = 'en-IN-PrabhatNeural';
+          let options = { pitch: '+0Hz', rate: '+0%' };
+
+          if (hasTamilScript) {
+            if (persona === 'maya' || persona === 'female' || persona === 'small_boy') {
+              voice = 'ta-IN-PallaviNeural';
+              options = { pitch: '+0Hz', rate: '+4%' };
+            } else {
+              voice = 'ta-IN-ValluvarNeural';
+              options = { pitch: '+0Hz', rate: '+4%' };
+            }
+          } else {
+            // Natural Indian English / Tanglish Expressive Voices
+            if (persona === 'small_boy') {
+              voice = 'en-IN-NeerjaExpressiveNeural';
+              options = { pitch: '+0Hz', rate: '+6%' };
+            } else if (persona === 'vadivelu') {
+              voice = 'en-IN-PrabhatNeural';
+              options = { pitch: '+0Hz', rate: '+6%' };
+            } else if (persona === 'santhanam') {
+              voice = 'en-IN-PrabhatNeural';
+              options = { pitch: '+0Hz', rate: '+10%' };
+            } else if (persona === 'male') {
+              voice = 'en-IN-PrabhatNeural';
+              options = { pitch: '+0Hz', rate: '+0%' };
+            } else {
+              // Maya / female
+              voice = 'en-IN-NeerjaExpressiveNeural';
+              options = { pitch: '+0Hz', rate: '+2%' };
+            }
+          }
+
+          await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+
+          const audioBuffer = await new Promise<Buffer>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              try { tts.close(); } catch {}
+              reject(new Error('Neural TTS timeout'));
+            }, 4500);
+
+            try {
+              const { audioStream } = tts.toStream(cleanText, options);
+              const chunks: Buffer[] = [];
+              audioStream.on('data', chunk => chunks.push(chunk));
+              audioStream.on('end', () => {
+                clearTimeout(timeout);
+                try { tts.close(); } catch {}
+                resolve(Buffer.concat(chunks));
+              });
+              audioStream.on('error', err => {
+                clearTimeout(timeout);
+                try { tts.close(); } catch {}
+                reject(err);
+              });
+            } catch (e) {
+              clearTimeout(timeout);
+              try { tts.close(); } catch {}
+              reject(e);
+            }
           });
-          audioStream.on('error', err => {
-            clearTimeout(timeout);
-            try { tts.close(); } catch {}
-            reject(err);
-          });
-        } catch (e) {
-          clearTimeout(timeout);
-          try { tts.close(); } catch {}
-          reject(e);
+
+          const dataUri = `data:audio/mp3;base64,${audioBuffer.toString('base64')}`;
+
+          // Cache recent dynamic utterances
+          if (this.audioCache.size >= NeuralVoiceService.CACHE_LIMIT) {
+            const firstKey = this.audioCache.keys().next().value;
+            if (firstKey) this.audioCache.delete(firstKey);
+          }
+          this.audioCache.set(cacheKey, dataUri);
+
+          return dataUri;
+        } catch (attemptErr) {
+          if (attempt === 2) throw attemptErr;
         }
-      });
-
-      const dataUri = `data:audio/mp3;base64,${audioBuffer.toString('base64')}`;
-
-      // Cache recent dynamic utterances
-      if (this.audioCache.size >= NeuralVoiceService.CACHE_LIMIT) {
-        const firstKey = this.audioCache.keys().next().value;
-        if (firstKey) this.audioCache.delete(firstKey);
       }
-      this.audioCache.set(cacheKey, dataUri);
-
-      return dataUri;
     } catch (err) {
       console.warn('[NeuralVoiceService] Dynamic speech synthesis failed:', err);
       return undefined;

@@ -7527,29 +7527,15 @@
       const indianVoice = availableVoices.find(
         (v) => v.lang === "ta-IN" || v.lang === "en-IN" || v.name.includes("India") || v.name.includes("Ravi") || v.name.includes("Heera") || v.name.includes("Kalpana") || v.name.includes("Valluvar")
       );
-      const isVadivelu = gender === "vadivelu";
-      const isSanthanam = gender === "santhanam";
-      const isSmallBoy = gender === "small_boy";
-      if (isSmallBoy) {
-        utterance.pitch = 1.55;
-        utterance.rate = 1.15;
-        if (indianVoice) utterance.voice = indianVoice;
-      } else if (isVadivelu) {
-        utterance.pitch = 1.35;
-        utterance.rate = 1.1;
-        if (indianVoice) utterance.voice = indianVoice;
-      } else if (isSanthanam) {
-        utterance.pitch = 0.92;
-        utterance.rate = 1.22;
-        if (indianVoice) utterance.voice = indianVoice;
+      utterance.pitch = 1;
+      utterance.rate = 1.05;
+      if (indianVoice) {
+        utterance.voice = indianVoice;
       } else {
-        utterance.pitch = 1.25;
-        utterance.rate = 1.05;
-        const femaleVoice = availableVoices.find(
-          (v) => (v.name.includes("Heera") || v.name.includes("Female") || v.name.includes("Zira") || v.name.includes("Samantha") || v.name.includes("Jenny")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
+        const naturalVoice = availableVoices.find(
+          (v) => (v.name.includes("Natural") || v.name.includes("Neural") || v.name.includes("Online") || v.name.includes("Google")) && (v.lang.startsWith("en") || v.lang.startsWith("ta"))
         );
-        if (femaleVoice) utterance.voice = femaleVoice;
-        else if (indianVoice) utterance.voice = indianVoice;
+        if (naturalVoice) utterance.voice = naturalVoice;
       }
       utterance.onstart = () => {
         this.isSpeaking = true;

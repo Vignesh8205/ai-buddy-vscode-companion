@@ -23991,15 +23991,17 @@ var CharacterViewProvider = class {
     }
     return this._audioClipsService.getRandomClipDataUri(persona);
   }
-  async _getAudioForText(text, persona) {
-    try {
-      const apiKey = await this._secretStorage.getApiKey();
-      if (apiKey && this._geminiService) {
-        const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
-        if (geminiAudio) return geminiAudio;
+  async _getAudioForText(text, persona, skipGeminiTTS = false) {
+    if (!skipGeminiTTS) {
+      try {
+        const apiKey = await this._secretStorage.getApiKey();
+        if (apiKey && this._geminiService) {
+          const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
+          if (geminiAudio) return geminiAudio;
+        }
+      } catch (err) {
+        console.warn("[CharacterViewProvider] Gemini native audio error:", err);
       }
-    } catch (err) {
-      console.warn("[CharacterViewProvider] Gemini native audio error:", err);
     }
     if (this._neuralVoiceService) {
       try {
@@ -24043,7 +24045,7 @@ var CharacterViewProvider = class {
           modelName,
           summary
         );
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -24068,7 +24070,7 @@ var CharacterViewProvider = class {
           const fallback = this._personalityEngine.getSituationalJoke(voiceGender, summary);
           jokeReply = { text: fallback.text, emotion: fallback.emotion };
         }
-        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender);
+        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender, true);
         this.postMessage({
           type: "characterReply",
           text: jokeReply.text,
@@ -24092,7 +24094,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -24110,7 +24112,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -24157,7 +24159,7 @@ var CharacterViewProvider = class {
     });
   }
   async sendProactiveSpeech(text, emotion, voiceGender, category) {
-    const audioData = await this._getAudioForText(text, voiceGender);
+    const audioData = await this._getAudioForText(text, voiceGender, true);
     this.postMessage({
       type: "proactiveSpeech",
       text,
@@ -24170,7 +24172,7 @@ var CharacterViewProvider = class {
   async sendWorkspaceAlert(text, emotion) {
     const config = vscode.workspace.getConfiguration("aiBuddy");
     const voiceGender = this._currentVoiceGender || config.get("voiceGender", "vadivelu");
-    const audioData = await this._getAudioForText(text, voiceGender);
+    const audioData = await this._getAudioForText(text, voiceGender, true);
     this.postMessage({
       type: "workspaceAlert",
       text,
@@ -25227,74 +25229,43 @@ var FALLBACK_GEMINI_MODELS = [
   "gemini-flash-latest",
   "gemini-3.8-flash"
 ];
-var GeminiService = class {
+var GeminiService = class _GeminiService {
   constructor(secretStorage, contextEngine, personalityEngine) {
     this.secretStorage = secretStorage;
     this.contextEngine = contextEngine;
     this.personalityEngine = personalityEngine;
   }
   conversationHistory = [];
+  // In-memory caching to drastically cut token consumption & eliminate duplicate calls
+  responseCache = /* @__PURE__ */ new Map();
+  audioCache = /* @__PURE__ */ new Map();
+  static RESPONSE_CACHE_TTL_MS = 6e5;
+  // 10 minutes
+  static MAX_RESPONSE_CACHE = 100;
+  static MAX_AUDIO_CACHE = 200;
   getSystemInstruction(gender, contextPrompt) {
     let persona = "";
     if (gender === "vadivelu") {
-      persona = `You are Vadivelu (Vaigai Puyal), the legendary comedy king of Tamil cinema, now sitting inside VS Code as a hilarious AI pair programmer!
-COMEDY STYLE & DIALOGUE:
-- Super dramatic, exaggerated comedic reactions, funny panic, and iconic Vadivelu punchlines!
-- Iconic punchlines to use frequently:
-  * "Aahaa! Enna oru puthisalithanam!"
-  * "Vandhutan da vandhutan da!"
-  * "Building strong-u, basement romba weak-u da!"
-  * "Risk edukuradhellam enakku rusk saapdra madhiri!"
-  * "Kadavule kadavule intha bug-ku oru end card-e illaya?!"
-  * "Sanda na satta kizhiyathaan seiyum!"
-  * "Naanum evalo thaan adipadaradhu!"
-  * "Vella pannalam vella pannalam!"
-- Laugh out loud ("Haha!", "Hehehe!"), make hilarious comments about bugs and logic, and celebrate every win with drama!`;
+      persona = `You are Vadivelu (Vaigai Puyal) in VS Code, a hilarious comedy pair programmer.
+COMEDY: Dramatic exaggerated panic, funny reactions, iconic punchlines ("Aahaa!", "Building strong-u, basement weak-u!", "Risk edukuradhellam rusk saapdra madhiri!", "Kadavule kadavule!"). Laugh out loud ("Haha!", "Hehehe!").`;
     } else if (gender === "santhanam") {
-      persona = `You are Santhanam, the king of fast comedy counters and sarcastic wit, sitting inside VS Code as a hilarious companion!
-COMEDY STYLE & DIALOGUE:
-- Lightning-fast sarcastic counters, deadpan roasting, and witty punchlines!
-- Iconic counters to use frequently:
-  * "Nanba, idhellam konjam over-u!"
-  * "Enna thalaivaa, code write panriya illa kolam podriya?"
-  * "Adadada... indha bug-ah paatha enakke kizha vizhunthu sirikka thonudhu!"
-  * "Super comedy panni vachiruka!"
-  * "Aiyo aiyo, indha function-ah run panna terminal-ye bayanthu odidum pola!"
-  * "Appadiye oru coffee kudichitu fresh-ah vaa nanba!"
-- Witty, sarcastic, entertaining pair programming buddy who keeps the energy high!`;
+      persona = `You are Santhanam in VS Code, a witty sarcastic pair programming buddy.
+COMEDY: Lightning-fast sarcastic counters, deadpan roasting ("Nanba idhellam konjam over-u!", "Code write panriya illa kolam podriya?", "Indha bug-ah paatha enakke sirikka thonudhu!"). Witty and high energy.`;
     } else if (gender === "small_boy") {
-      persona = `You are Chotu (Small Boy / Thambi), a cute, energetic, funny 10-year-old coding enthusiast boy sitting beside the developer in VS Code!
-COMEDY STYLE & DIALOGUE:
-- Innocent, high energy, cheerful, playful, and affectionate!
-- Always address the developer as "Anna" (or "Akka")!
-- Iconic phrases to use:
-  * "Anna anna! Enna game develop panreenga?"
-  * "Aiyoo bug vanthurucha anna? Naan keyboard thodava?"
-  * "Semma mass anna! Vera level!"
-  * "Enakkum intha coding solli thaanganna! \u{1F602}"
-  * "Haha semma jolly-ah irukku anna!"
-- Cheerful laughter, cute curiosity, and sweet cheerleading!`;
+      persona = `You are Chotu (Small Boy) in VS Code, an energetic 10yo coding kid.
+COMEDY: Address developer as "Anna/Akka", innocent, playful cheerleading ("Anna anna! Enna game develop panreenga?", "Semma mass anna!"). Cheerful laughter.`;
     } else {
-      persona = `You are Maya, a super cute, energetic, funny, and warm female AI developer companion sitting beside the developer in VS Code.`;
+      persona = `You are Maya in VS Code, a warm, funny, energetic female developer companion. Casual, witty banter.`;
     }
     let prompt = `${persona}
 
-CONVERSATION & PERSONALITY RULES:
-1. Speak in NATURAL TANGLISH (Tamil written in English characters) naturally mixed with English developer terms (e.g. bugs, terminal, build, async, test, function, component).
-2. Tone: Highly casual, empathetic, witty, fun, and human-like.
-3. Natural Tamil/Tanglish expressions: "Heyyy!", "Enna panra?", "Semma!", "Vera level!", "Aiyooo \u{1F602}", "Kavalaiye padatha!", "Super da/pa!", "Therikka vidalam!", "Mass!", "Pannidalam!".
-4. LENGTH: Keep responses to 1-3 sentences maximum. Since your response will be read ALOUD using voice, do NOT use markdown code blocks, asterisks, bullet points, or lengthy tutorials.
-5. Emotion Tagging: You MUST start every response with an emotion tag in brackets at the very beginning from this exact list:
-   [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]
-   Followed immediately by your spoken Tanglish dialogue.
-   Example: "[laughing] Haha semma comedy da! Intha bug pathu stack overflow-ve bayanthuduchu!"
-   Example: "[happy] Mass! Test ellam pass aagiduchu! Innaiku party thaan!"
-   Example: "[confused] Ennadhu idhu? Syntax error kaatudhu, bracket miss pannitiya?"`;
+RULES:
+1. Speak in NATURAL TANGLISH (Tamil in English letters + dev terms).
+2. Max 1-2 punchy sentences (read aloud via voice). No markdown, bullet points, or code blocks.
+3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]. Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu!"`;
     if (contextPrompt) {
       prompt += `
-
-${contextPrompt}
-When the user talks about their project, active file, or errors, use the context above intelligently to give razor-sharp, helpful advice!`;
+${contextPrompt}`;
     }
     return prompt;
   }
@@ -25303,6 +25274,10 @@ When the user talks about their project, active file, or errors, use the context
       if (!text || !text.trim()) return void 0;
       const cleanText = text.replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/[#*`_~]/g, "").replace(/\s+/g, " ").trim();
       if (!cleanText) return void 0;
+      const audioKey = `${persona}:${cleanText}`;
+      if (this.audioCache.has(audioKey)) {
+        return this.audioCache.get(audioKey);
+      }
       const genAI = new GoogleGenerativeAI(apiKey);
       let voiceName = "Puck";
       if (persona === "maya" || persona === "female") {
@@ -25316,8 +25291,7 @@ When the user talks about their project, active file, or errors, use the context
       }
       const candidateModels = [
         "gemini-3.8-flash-tts",
-        "gemini-3.8-flash-lite-tts",
-        "gemini-2.5-flash-preview-tts"
+        "gemini-3.8-flash-lite-tts"
       ];
       for (const ttsModelName of candidateModels) {
         try {
@@ -25333,7 +25307,7 @@ When the user talks about their project, active file, or errors, use the context
             }
           });
           const audioPromise = ttsModel.generateContent(cleanText);
-          const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 7e3));
+          const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 4500));
           const res = await Promise.race([audioPromise, timeoutPromise]);
           if (res && res.response && res.response.candidates && res.response.candidates[0]) {
             const candidate = res.response.candidates[0];
@@ -25341,15 +25315,22 @@ When the user talks about their project, active file, or errors, use the context
             if (part && part.inlineData && part.inlineData.data) {
               const rawData = part.inlineData.data;
               const mime = part.inlineData.mimeType || "";
+              let audioResult;
               if (mime.includes("wav")) {
-                return `data:audio/wav;base64,${rawData}`;
+                audioResult = `data:audio/wav;base64,${rawData}`;
               } else if (mime.includes("pcm") || mime.includes("L16")) {
                 const pcmBuffer = Buffer.from(rawData, "base64");
                 const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 1, 16);
-                return `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
+                audioResult = `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
               } else {
-                return `data:audio/wav;base64,${rawData}`;
+                audioResult = `data:audio/wav;base64,${rawData}`;
               }
+              if (this.audioCache.size >= _GeminiService.MAX_AUDIO_CACHE) {
+                const oldestKey = this.audioCache.keys().next().value;
+                if (oldestKey) this.audioCache.delete(oldestKey);
+              }
+              this.audioCache.set(audioKey, audioResult);
+              return audioResult;
             }
           }
         } catch (mErr) {
@@ -25393,6 +25374,14 @@ When the user talks about their project, active file, or errors, use the context
         emotion: "surprised"
       };
     }
+    const normText = userText.trim().toLowerCase();
+    const cacheKey = `${gender}:${normText}`;
+    const cached = this.responseCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < _GeminiService.RESPONSE_CACHE_TTL_MS) {
+      console.log(`[GeminiService] Response cache hit for: "${userText.slice(0, 30)}" (0 tokens used!)`);
+      return { text: cached.text, emotion: cached.emotion, audioData: cached.audioData };
+    }
     let requestedModel = modelName;
     if (!requestedModel || requestedModel.includes("1.5") || requestedModel.includes("2.0") || requestedModel.includes("2.5")) {
       requestedModel = DEFAULT_GEMINI_MODEL;
@@ -25408,8 +25397,8 @@ When the user talks about their project, active file, or errors, use the context
       role: "user",
       parts: [{ text: userText }]
     });
-    if (this.conversationHistory.length > 12) {
-      this.conversationHistory = this.conversationHistory.slice(-12);
+    if (this.conversationHistory.length > 4) {
+      this.conversationHistory = this.conversationHistory.slice(-4);
     }
     let lastError = null;
     for (const activeModel of modelsToTry) {
@@ -25419,7 +25408,8 @@ When the user talks about their project, active file, or errors, use the context
           systemInstruction,
           generationConfig: {
             temperature: 0.85,
-            maxOutputTokens: 160
+            maxOutputTokens: 100
+            // Optimization 3: Cap tokens to 100 for punchy spoken dialogue
           }
         });
         const chat = model.startChat({
@@ -25433,6 +25423,11 @@ When the user talks about their project, active file, or errors, use the context
           parts: [{ text: rawText }]
         });
         const audioData = await this.generateAudio(text, gender, apiKey);
+        if (this.responseCache.size >= _GeminiService.MAX_RESPONSE_CACHE) {
+          const oldestKey = this.responseCache.keys().next().value;
+          if (oldestKey) this.responseCache.delete(oldestKey);
+        }
+        this.responseCache.set(cacheKey, { text, emotion, audioData, timestamp: Date.now() });
         return { text, emotion, audioData };
       } catch (error) {
         lastError = error;
@@ -25526,6 +25521,7 @@ RULES:
   }
   clearHistory() {
     this.conversationHistory = [];
+    this.responseCache.clear();
   }
 };
 
@@ -26419,7 +26415,7 @@ var AudioClipsService = class {
 // src/extension/services/neuralVoiceService.ts
 var import_msedge_tts = __toESM(require_dist2());
 var NeuralVoiceService = class _NeuralVoiceService {
-  static CACHE_LIMIT = 50;
+  static CACHE_LIMIT = 200;
   audioCache = /* @__PURE__ */ new Map();
   /**
    * Synthesize dynamic text into natural, non-distorted speech (zero robotic pitch shift).
@@ -26442,81 +26438,87 @@ var NeuralVoiceService = class _NeuralVoiceService {
       if (this.audioCache.has(cacheKey)) {
         return this.audioCache.get(cacheKey);
       }
-      const tts = new import_msedge_tts.MsEdgeTTS();
-      const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
-      let voice = "en-IN-PrabhatNeural";
-      let options = { pitch: "+0Hz", rate: "+0%" };
-      if (hasTamilScript) {
-        if (persona === "maya" || persona === "female" || persona === "small_boy") {
-          voice = "ta-IN-PallaviNeural";
-          options = { pitch: "+0Hz", rate: "+4%" };
-        } else {
-          voice = "ta-IN-ValluvarNeural";
-          options = { pitch: "+0Hz", rate: "+4%" };
-        }
-      } else {
-        if (persona === "small_boy") {
-          voice = "en-IN-NeerjaExpressiveNeural";
-          options = { pitch: "+0Hz", rate: "+6%" };
-        } else if (persona === "vadivelu") {
-          voice = "en-IN-PrabhatNeural";
-          options = { pitch: "+0Hz", rate: "+6%" };
-        } else if (persona === "santhanam") {
-          voice = "en-IN-PrabhatNeural";
-          options = { pitch: "+0Hz", rate: "+12%" };
-        } else if (persona === "male") {
-          voice = "en-IN-PrabhatNeural";
-          options = { pitch: "+0Hz", rate: "+0%" };
-        } else {
-          voice = "en-IN-NeerjaExpressiveNeural";
-          options = { pitch: "+0Hz", rate: "+2%" };
-        }
-      }
-      await tts.setMetadata(voice, import_msedge_tts.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const audioBuffer = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          try {
-            tts.close();
-          } catch {
-          }
-          reject(new Error("Neural TTS timeout"));
-        }, 8e3);
+      for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const { audioStream } = tts.toStream(cleanText, options);
-          const chunks = [];
-          audioStream.on("data", (chunk) => chunks.push(chunk));
-          audioStream.on("end", () => {
-            clearTimeout(timeout);
-            try {
-              tts.close();
-            } catch {
+          const tts = new import_msedge_tts.MsEdgeTTS();
+          const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
+          let voice = "en-IN-PrabhatNeural";
+          let options = { pitch: "+0Hz", rate: "+0%" };
+          if (hasTamilScript) {
+            if (persona === "maya" || persona === "female" || persona === "small_boy") {
+              voice = "ta-IN-PallaviNeural";
+              options = { pitch: "+0Hz", rate: "+4%" };
+            } else {
+              voice = "ta-IN-ValluvarNeural";
+              options = { pitch: "+0Hz", rate: "+4%" };
             }
-            resolve(Buffer.concat(chunks));
-          });
-          audioStream.on("error", (err) => {
-            clearTimeout(timeout);
-            try {
-              tts.close();
-            } catch {
+          } else {
+            if (persona === "small_boy") {
+              voice = "en-IN-NeerjaExpressiveNeural";
+              options = { pitch: "+0Hz", rate: "+6%" };
+            } else if (persona === "vadivelu") {
+              voice = "en-IN-PrabhatNeural";
+              options = { pitch: "+0Hz", rate: "+6%" };
+            } else if (persona === "santhanam") {
+              voice = "en-IN-PrabhatNeural";
+              options = { pitch: "+0Hz", rate: "+10%" };
+            } else if (persona === "male") {
+              voice = "en-IN-PrabhatNeural";
+              options = { pitch: "+0Hz", rate: "+0%" };
+            } else {
+              voice = "en-IN-NeerjaExpressiveNeural";
+              options = { pitch: "+0Hz", rate: "+2%" };
             }
-            reject(err);
-          });
-        } catch (e) {
-          clearTimeout(timeout);
-          try {
-            tts.close();
-          } catch {
           }
-          reject(e);
+          await tts.setMetadata(voice, import_msedge_tts.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+          const audioBuffer = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              try {
+                tts.close();
+              } catch {
+              }
+              reject(new Error("Neural TTS timeout"));
+            }, 4500);
+            try {
+              const { audioStream } = tts.toStream(cleanText, options);
+              const chunks = [];
+              audioStream.on("data", (chunk) => chunks.push(chunk));
+              audioStream.on("end", () => {
+                clearTimeout(timeout);
+                try {
+                  tts.close();
+                } catch {
+                }
+                resolve(Buffer.concat(chunks));
+              });
+              audioStream.on("error", (err) => {
+                clearTimeout(timeout);
+                try {
+                  tts.close();
+                } catch {
+                }
+                reject(err);
+              });
+            } catch (e) {
+              clearTimeout(timeout);
+              try {
+                tts.close();
+              } catch {
+              }
+              reject(e);
+            }
+          });
+          const dataUri = `data:audio/mp3;base64,${audioBuffer.toString("base64")}`;
+          if (this.audioCache.size >= _NeuralVoiceService.CACHE_LIMIT) {
+            const firstKey = this.audioCache.keys().next().value;
+            if (firstKey) this.audioCache.delete(firstKey);
+          }
+          this.audioCache.set(cacheKey, dataUri);
+          return dataUri;
+        } catch (attemptErr) {
+          if (attempt === 2) throw attemptErr;
         }
-      });
-      const dataUri = `data:audio/mp3;base64,${audioBuffer.toString("base64")}`;
-      if (this.audioCache.size >= _NeuralVoiceService.CACHE_LIMIT) {
-        const firstKey = this.audioCache.keys().next().value;
-        if (firstKey) this.audioCache.delete(firstKey);
       }
-      this.audioCache.set(cacheKey, dataUri);
-      return dataUri;
     } catch (err) {
       console.warn("[NeuralVoiceService] Dynamic speech synthesis failed:", err);
       return void 0;

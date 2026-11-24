@@ -296,40 +296,22 @@ export class SpeechService {
         v.name.includes('Valluvar')
     );
 
-    const isVadivelu = gender === 'vadivelu';
-    const isSanthanam = gender === 'santhanam';
-    const isSmallBoy = gender === 'small_boy';
+    // Set natural human pitch with zero robotic/metallic helium distortion
+    utterance.pitch = 1.0;
+    utterance.rate = 1.05;
 
-    if (isSmallBoy) {
-      // Small boy: Cute high pitch, energetic, fast
-      utterance.pitch = 1.55;
-      utterance.rate = 1.15;
-      if (indianVoice) utterance.voice = indianVoice;
-    } else if (isVadivelu) {
-      // Vadivelu: High comedic pitch inflections, expressive cadence
-      utterance.pitch = 1.35;
-      utterance.rate = 1.1;
-      if (indianVoice) utterance.voice = indianVoice;
-    } else if (isSanthanam) {
-      // Santhanam: Fast counters, crisp, witty, deadpan
-      utterance.pitch = 0.92;
-      utterance.rate = 1.22;
-      if (indianVoice) utterance.voice = indianVoice;
+    if (indianVoice) {
+      utterance.voice = indianVoice;
     } else {
-      // Maya: Warm, sweet female tone
-      utterance.pitch = 1.25;
-      utterance.rate = 1.05;
-      const femaleVoice = availableVoices.find(
+      const naturalVoice = availableVoices.find(
         v =>
-          (v.name.includes('Heera') ||
-            v.name.includes('Female') ||
-            v.name.includes('Zira') ||
-            v.name.includes('Samantha') ||
-            v.name.includes('Jenny')) &&
+          (v.name.includes('Natural') ||
+            v.name.includes('Neural') ||
+            v.name.includes('Online') ||
+            v.name.includes('Google')) &&
           (v.lang.startsWith('en') || v.lang.startsWith('ta'))
       );
-      if (femaleVoice) utterance.voice = femaleVoice;
-      else if (indianVoice) utterance.voice = indianVoice;
+      if (naturalVoice) utterance.voice = naturalVoice;
     }
 
     utterance.onstart = () => {
