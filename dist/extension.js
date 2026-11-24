@@ -23992,6 +23992,15 @@ var CharacterViewProvider = class {
     return this._audioClipsService.getRandomClipDataUri(persona);
   }
   async _getAudioForText(text, persona) {
+    try {
+      const apiKey = await this._secretStorage.getApiKey();
+      if (apiKey && this._geminiService) {
+        const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
+        if (geminiAudio) return geminiAudio;
+      }
+    } catch (err) {
+      console.warn("[CharacterViewProvider] Gemini native audio error:", err);
+    }
     if (this._neuralVoiceService) {
       try {
         const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
@@ -24034,13 +24043,13 @@ var CharacterViewProvider = class {
           modelName,
           summary
         );
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData
+          audioData
         });
         break;
       }
@@ -24071,13 +24080,13 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData
+          audioData
         });
         break;
       }
@@ -24089,13 +24098,13 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData
+          audioData
         });
         break;
       }
@@ -25279,6 +25288,9 @@ When the user talks about their project, active file, or errors, use the context
   }
   async generateAudio(text, persona, apiKey) {
     try {
+      if (!text || !text.trim()) return void 0;
+      const cleanText = text.replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/[#*`_~]/g, "").replace(/\s+/g, " ").trim();
+      if (!cleanText) return void 0;
       const genAI = new GoogleGenerativeAI(apiKey);
       let voiceName = "Puck";
       if (persona === "maya" || persona === "female") {
@@ -25290,31 +25302,73 @@ When the user talks about their project, active file, or errors, use the context
       } else if (persona === "small_boy") {
         voiceName = "Puck";
       }
-      const ttsModel = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash-preview-tts",
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName }
+      const candidateModels = [
+        "gemini-3.8-flash-tts",
+        "gemini-3.8-flash-lite-tts",
+        "gemini-2.5-flash-preview-tts"
+      ];
+      for (const ttsModelName of candidateModels) {
+        try {
+          const ttsModel = genAI.getGenerativeModel({
+            model: ttsModelName,
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName }
+                }
+              }
+            }
+          });
+          const audioPromise = ttsModel.generateContent(cleanText);
+          const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 7e3));
+          const res = await Promise.race([audioPromise, timeoutPromise]);
+          if (res && res.response && res.response.candidates && res.response.candidates[0]) {
+            const candidate = res.response.candidates[0];
+            const part = candidate.content?.parts?.[0];
+            if (part && part.inlineData && part.inlineData.data) {
+              const rawData = part.inlineData.data;
+              const mime = part.inlineData.mimeType || "";
+              if (mime.includes("wav")) {
+                return `data:audio/wav;base64,${rawData}`;
+              } else if (mime.includes("pcm") || mime.includes("L16")) {
+                const pcmBuffer = Buffer.from(rawData, "base64");
+                const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 1, 16);
+                return `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
+              } else {
+                return `data:audio/wav;base64,${rawData}`;
+              }
             }
           }
-        }
-      });
-      const audioPromise = ttsModel.generateContent(`Read this in human voice: ${text}`);
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 3800));
-      const res = await Promise.race([audioPromise, timeoutPromise]);
-      if (res && res.response && res.response.candidates && res.response.candidates[0]) {
-        const candidate = res.response.candidates[0];
-        const part = candidate.content?.parts?.[0];
-        if (part && part.inlineData && part.inlineData.data) {
-          return part.inlineData.data;
+        } catch (mErr) {
+          console.warn(`[GeminiService] TTS model ${ttsModelName} attempt:`, mErr);
         }
       }
     } catch (e) {
       console.warn("Gemini audio generation fallback to local speech:", e);
     }
     return void 0;
+  }
+  pcmToWav(pcmBuffer, sampleRate = 24e3, numChannels = 1, bitDepth = 16) {
+    const header = Buffer.alloc(44);
+    const byteRate = sampleRate * numChannels * bitDepth / 8;
+    const blockAlign = numChannels * bitDepth / 8;
+    const dataSize = pcmBuffer.length;
+    const chunkSize = 36 + dataSize;
+    header.write("RIFF", 0);
+    header.writeUInt32LE(chunkSize, 4);
+    header.write("WAVE", 8);
+    header.write("fmt ", 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitDepth, 34);
+    header.write("data", 36);
+    header.writeUInt32LE(dataSize, 40);
+    return Buffer.concat([header, pcmBuffer]);
   }
   async generateReply(userText, gender, modelName = DEFAULT_GEMINI_MODEL, projectSummary) {
     const apiKey = await this.secretStorage.getApiKey();
@@ -26186,7 +26240,8 @@ var NeuralVoiceService = class _NeuralVoiceService {
   static CACHE_LIMIT = 50;
   audioCache = /* @__PURE__ */ new Map();
   /**
-   * Synthesize any dynamic text into studio-quality Neural Tamil audio (Data URI: data:audio/mp3;base64,...)
+   * Synthesize dynamic text into natural, non-distorted speech (zero robotic pitch shift).
+   * Data URI: data:audio/mp3;base64,...
    */
   async synthesize(text, persona) {
     try {
@@ -26206,23 +26261,34 @@ var NeuralVoiceService = class _NeuralVoiceService {
         return this.audioCache.get(cacheKey);
       }
       const tts = new import_msedge_tts.MsEdgeTTS();
-      let voice = "ta-IN-ValluvarNeural";
+      const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
+      let voice = "en-IN-PrabhatNeural";
       let options = { pitch: "+0Hz", rate: "+0%" };
-      if (persona === "small_boy") {
-        voice = "ta-IN-PallaviNeural";
-        options = { pitch: "+42Hz", rate: "+18%" };
-      } else if (persona === "vadivelu") {
-        voice = "ta-IN-ValluvarNeural";
-        options = { pitch: "+20Hz", rate: "+8%" };
-      } else if (persona === "santhanam") {
-        voice = "ta-IN-ValluvarNeural";
-        options = { pitch: "-10Hz", rate: "+24%" };
-      } else if (persona === "male") {
-        voice = "ta-IN-ValluvarNeural";
-        options = { pitch: "+0Hz", rate: "+0%" };
+      if (hasTamilScript) {
+        if (persona === "maya" || persona === "female" || persona === "small_boy") {
+          voice = "ta-IN-PallaviNeural";
+          options = { pitch: "+0Hz", rate: "+4%" };
+        } else {
+          voice = "ta-IN-ValluvarNeural";
+          options = { pitch: "+0Hz", rate: "+4%" };
+        }
       } else {
-        voice = "ta-IN-PallaviNeural";
-        options = { pitch: "+10Hz", rate: "+5%" };
+        if (persona === "small_boy") {
+          voice = "en-IN-NeerjaExpressiveNeural";
+          options = { pitch: "+0Hz", rate: "+6%" };
+        } else if (persona === "vadivelu") {
+          voice = "en-IN-PrabhatNeural";
+          options = { pitch: "+0Hz", rate: "+6%" };
+        } else if (persona === "santhanam") {
+          voice = "en-IN-PrabhatNeural";
+          options = { pitch: "+0Hz", rate: "+12%" };
+        } else if (persona === "male") {
+          voice = "en-IN-PrabhatNeural";
+          options = { pitch: "+0Hz", rate: "+0%" };
+        } else {
+          voice = "en-IN-NeerjaExpressiveNeural";
+          options = { pitch: "+0Hz", rate: "+2%" };
+        }
       }
       await tts.setMetadata(voice, import_msedge_tts.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       const audioBuffer = await new Promise((resolve, reject) => {

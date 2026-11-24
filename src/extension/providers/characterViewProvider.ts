@@ -67,6 +67,18 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _getAudioForText(text: string, persona: VoiceGender): Promise<string | undefined> {
+    // 1. Primary: Gemini Conversational Native Audio (Human-like tone, laughs, natural prosody)
+    try {
+      const apiKey = await this._secretStorage.getApiKey();
+      if (apiKey && this._geminiService) {
+        const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
+        if (geminiAudio) return geminiAudio;
+      }
+    } catch (err) {
+      console.warn('[CharacterViewProvider] Gemini native audio error:', err);
+    }
+
+    // 2. Secondary Fallback: Refined Free Neural Voice (Zero pitch distortion)
     if (this._neuralVoiceService) {
       try {
         const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
@@ -75,6 +87,8 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         console.warn('[CharacterViewProvider] Neural voice synthesis error:', err);
       }
     }
+
+    // 3. Fallback: Pre-recorded audio clip
     return this._getAudioClipForPersona(persona);
   }
 
@@ -116,13 +130,13 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           summary
         );
 
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender));
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData,
+          audioData,
         });
         break;
       }
@@ -158,14 +172,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender));
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData,
+          audioData,
         });
         break;
       }
@@ -180,14 +194,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const audioData = await this._getAudioForText(reply.text, voiceGender);
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender));
 
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
           emotion: reply.emotion,
           voiceGender,
-          audioData: audioData || reply.audioData,
+          audioData,
         });
         break;
       }

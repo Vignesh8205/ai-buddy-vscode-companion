@@ -6,7 +6,8 @@ export class NeuralVoiceService {
   private audioCache = new Map<string, string>();
 
   /**
-   * Synthesize any dynamic text into studio-quality Neural Tamil audio (Data URI: data:audio/mp3;base64,...)
+   * Synthesize dynamic text into natural, non-distorted speech (zero robotic pitch shift).
+   * Data URI: data:audio/mp3;base64,...
    */
   public async synthesize(text: string, persona: VoiceGender): Promise<string | undefined> {
     try {
@@ -14,16 +15,16 @@ export class NeuralVoiceService {
 
       // Clean code blocks, URLs, markdown, and emojis for smooth natural speech
       let cleanText = text
-        .replace(/```[\s\S]*?```/g, '') // remove code blocks
-        .replace(/https?:\/\/\S+/g, '') // remove URLs
-        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // remove emojis
-        .replace(/[#*`_~]/g, '') // remove markdown symbols
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .replace(/[#*`_~]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
       if (!cleanText) return undefined;
 
-      // Limit to 350 characters for fast speech synthesis and conversational pacing
+      // Limit length for conversational pacing
       if (cleanText.length > 350) {
         const lastPunctuation = cleanText.slice(0, 350).lastIndexOf('.');
         if (lastPunctuation > 100) {
@@ -40,26 +41,40 @@ export class NeuralVoiceService {
 
       const tts = new MsEdgeTTS();
 
-      // Configure voice and prosody per persona
-      let voice = 'ta-IN-ValluvarNeural';
+      // Detect if text has Tamil Unicode script
+      const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
+
+      // STRICT RULE: pitch is +0Hz (zero pitch distortion to prevent robotic metallic / helium sound)
+      let voice = 'en-IN-PrabhatNeural';
       let options = { pitch: '+0Hz', rate: '+0%' };
 
-      if (persona === 'small_boy') {
-        voice = 'ta-IN-PallaviNeural';
-        options = { pitch: '+42Hz', rate: '+18%' };
-      } else if (persona === 'vadivelu') {
-        voice = 'ta-IN-ValluvarNeural';
-        options = { pitch: '+20Hz', rate: '+8%' };
-      } else if (persona === 'santhanam') {
-        voice = 'ta-IN-ValluvarNeural';
-        options = { pitch: '-10Hz', rate: '+24%' };
-      } else if (persona === 'male') {
-        voice = 'ta-IN-ValluvarNeural';
-        options = { pitch: '+0Hz', rate: '+0%' };
+      if (hasTamilScript) {
+        if (persona === 'maya' || persona === 'female' || persona === 'small_boy') {
+          voice = 'ta-IN-PallaviNeural';
+          options = { pitch: '+0Hz', rate: '+4%' };
+        } else {
+          voice = 'ta-IN-ValluvarNeural';
+          options = { pitch: '+0Hz', rate: '+4%' };
+        }
       } else {
-        // Maya / female
-        voice = 'ta-IN-PallaviNeural';
-        options = { pitch: '+10Hz', rate: '+5%' };
+        // Natural Indian English / Tanglish Expressive Voices
+        if (persona === 'small_boy') {
+          voice = 'en-IN-NeerjaExpressiveNeural';
+          options = { pitch: '+0Hz', rate: '+6%' };
+        } else if (persona === 'vadivelu') {
+          voice = 'en-IN-PrabhatNeural';
+          options = { pitch: '+0Hz', rate: '+6%' };
+        } else if (persona === 'santhanam') {
+          voice = 'en-IN-PrabhatNeural';
+          options = { pitch: '+0Hz', rate: '+12%' };
+        } else if (persona === 'male') {
+          voice = 'en-IN-PrabhatNeural';
+          options = { pitch: '+0Hz', rate: '+0%' };
+        } else {
+          // Maya / female
+          voice = 'en-IN-NeerjaExpressiveNeural';
+          options = { pitch: '+0Hz', rate: '+2%' };
+        }
       }
 
       await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);

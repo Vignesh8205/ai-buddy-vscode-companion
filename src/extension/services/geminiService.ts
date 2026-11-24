@@ -94,6 +94,19 @@ CONVERSATION & PERSONALITY RULES:
 
   public async generateAudio(text: string, persona: VoiceGender, apiKey: string): Promise<string | undefined> {
     try {
+      if (!text || !text.trim()) return undefined;
+
+      // Clean markdown symbols, emojis, and code formatting so audio is clean
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .replace(/[#*`_~]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return undefined;
+
       const genAI = new GoogleGenerativeAI(apiKey);
       let voiceName = 'Puck';
       if (persona === 'maya' || persona === 'female') {
@@ -106,32 +119,80 @@ CONVERSATION & PERSONALITY RULES:
         voiceName = 'Puck';
       }
 
-      const ttsModel = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash-preview-tts',
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
-            },
-          },
-        },
-      });
+      const candidateModels = [
+        'gemini-3.8-flash-tts',
+        'gemini-3.8-flash-lite-tts',
+        'gemini-2.5-flash-preview-tts',
+      ];
 
-      const audioPromise = ttsModel.generateContent(`Read this in human voice: ${text}`);
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3800));
-      const res: any = await Promise.race([audioPromise, timeoutPromise]);
-      if (res && res.response && res.response.candidates && res.response.candidates[0]) {
-        const candidate = res.response.candidates[0];
-        const part = candidate.content?.parts?.[0];
-        if (part && part.inlineData && part.inlineData.data) {
-          return part.inlineData.data;
+      for (const ttsModelName of candidateModels) {
+        try {
+          const ttsModel = genAI.getGenerativeModel({
+            model: ttsModelName,
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName },
+                },
+              },
+            },
+          });
+
+          const audioPromise = ttsModel.generateContent(cleanText);
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 7000));
+          const res: any = await Promise.race([audioPromise, timeoutPromise]);
+
+          if (res && res.response && res.response.candidates && res.response.candidates[0]) {
+            const candidate = res.response.candidates[0];
+            const part = candidate.content?.parts?.[0];
+            if (part && part.inlineData && part.inlineData.data) {
+              const rawData = part.inlineData.data;
+              const mime = part.inlineData.mimeType || '';
+
+              if (mime.includes('wav')) {
+                return `data:audio/wav;base64,${rawData}`;
+              } else if (mime.includes('pcm') || mime.includes('L16')) {
+                const pcmBuffer = Buffer.from(rawData, 'base64');
+                const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 1, 16);
+                return `data:audio/wav;base64,${wavBuffer.toString('base64')}`;
+              } else {
+                return `data:audio/wav;base64,${rawData}`;
+              }
+            }
+          }
+        } catch (mErr) {
+          console.warn(`[GeminiService] TTS model ${ttsModelName} attempt:`, mErr);
         }
       }
     } catch (e) {
       console.warn('Gemini audio generation fallback to local speech:', e);
     }
     return undefined;
+  }
+
+  private pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitDepth = 16): Buffer {
+    const header = Buffer.alloc(44);
+    const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+    const blockAlign = (numChannels * bitDepth) / 8;
+    const dataSize = pcmBuffer.length;
+    const chunkSize = 36 + dataSize;
+
+    header.write('RIFF', 0);
+    header.writeUInt32LE(chunkSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20); // PCM format
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitDepth, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+
+    return Buffer.concat([header, pcmBuffer]);
   }
 
   public async generateReply(
