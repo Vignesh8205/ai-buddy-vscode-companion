@@ -8,6 +8,7 @@ import { PersonalityEngine } from './services/personalityEngine';
 import { ProactiveDecisionEngine } from './services/proactiveEngine';
 import { AudioClipsService } from './services/audioClipsService';
 import { NeuralVoiceService } from './services/neuralVoiceService';
+import { ElevenLabsService } from './services/elevenLabsService';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('AI Buddy activating with Proactive Personality & Humour Engine...');
@@ -25,8 +26,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Initialize Dynamic Neural Voice Service (msedge-tts)
+  // Initialize Dynamic Neural Voice Service (msedge-tts fallback)
   const neuralVoiceService = new NeuralVoiceService();
+
+  // Initialize Enterprise ElevenLabs Voice Service (Primary Studio Voice)
+  const elevenLabsService = new ElevenLabsService(secretStorage);
 
   // Declare characterProvider reference
   let characterProvider: CharacterViewProvider;
@@ -54,7 +58,8 @@ export function activate(context: vscode.ExtensionContext) {
     personalityEngine,
     proactiveEngine,
     audioClipsService,
-    neuralVoiceService
+    neuralVoiceService,
+    elevenLabsService
   );
 
   // Initialize Workspace Monitor with debounced callbacks
@@ -113,6 +118,24 @@ export function activate(context: vscode.ExtensionContext) {
         await secretStorage.setApiKey(apiKey);
         vscode.window.showInformationMessage('AI Buddy: Gemini API Key saved successfully in SecretStorage!');
         characterProvider.postMessage({ type: 'apiKeyStatus', hasKey: !!apiKey });
+      }
+    })
+  );
+
+  // Command: Set ElevenLabs Enterprise Voice API Key
+  context.subscriptions.push(
+    vscode.commands.registerCommand('aiBuddy.setElevenLabsApiKey', async () => {
+      const apiKey = await vscode.window.showInputBox({
+        title: 'AI Buddy: Enter ElevenLabs Enterprise Voice API Key',
+        prompt: 'Get your key from https://elevenlabs.io (sk_...)',
+        password: true,
+        placeHolder: 'sk_...',
+      });
+
+      if (apiKey !== undefined) {
+        await secretStorage.setElevenLabsApiKey(apiKey);
+        vscode.window.showInformationMessage('AI Buddy: ElevenLabs Enterprise Voice API Key saved successfully in SecretStorage!');
+        characterProvider.postMessage({ type: 'elevenLabsApiKeyStatus', hasKey: !!apiKey });
       }
     })
   );

@@ -22,6 +22,7 @@ export const App: React.FC = () => {
   const [characterState, setCharacterState] = useState<CharacterState>('idle');
   const [voiceGender, setVoiceGender] = useState<VoiceGender>('female');
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [hasElevenLabsKey, setHasElevenLabsKey] = useState(false);
   const [quietMode, setQuietMode] = useState(false);
   const [proactiveFrequency, setProactiveFrequency] = useState<ProactiveFrequency>('medium');
   const [currentText, setCurrentText] = useState<string>(
@@ -97,6 +98,9 @@ export const App: React.FC = () => {
         case 'init':
           setVoiceGender(message.voiceGender);
           setHasApiKey(message.hasApiKey);
+          if (message.hasElevenLabsKey !== undefined) {
+            setHasElevenLabsKey(message.hasElevenLabsKey);
+          }
           setQuietMode(message.quietMode);
           if (message.proactiveFrequency) {
             setProactiveFrequency(message.proactiveFrequency);
@@ -183,6 +187,14 @@ export const App: React.FC = () => {
           setHasApiKey(message.hasKey);
           if (message.hasKey) {
             setCurrentText('Mass! API Key connect aagiduchu! Ippo unga coding buddy ready! 🔥');
+            setCharacterState('happy');
+          }
+          break;
+
+        case 'elevenLabsApiKeyStatus':
+          setHasElevenLabsKey(message.hasKey);
+          if (message.hasKey) {
+            setCurrentText('Super! ElevenLabs Studio Voice AI connected! Enterprise natural voice activated! 🎙️✨');
             setCharacterState('happy');
           }
           break;
@@ -336,6 +348,10 @@ export const App: React.FC = () => {
     getVsCodeApi().postMessage({ type: 'setApiKey', key });
   };
 
+  const handleSaveElevenLabsKey = (key: string) => {
+    getVsCodeApi().postMessage({ type: 'setElevenLabsApiKey', key });
+  };
+
   // Clear History
   const handleClearHistory = () => {
     setMessages([]);
@@ -448,10 +464,12 @@ export const App: React.FC = () => {
       <SettingsModal
         isOpen={isSettingsOpen}
         hasApiKey={hasApiKey}
+        hasElevenLabsKey={hasElevenLabsKey}
         proactiveFrequency={proactiveFrequency}
         contextSummary={contextSummary}
         onClose={() => setIsSettingsOpen(false)}
         onSaveKey={handleSaveApiKey}
+        onSaveElevenLabsKey={handleSaveElevenLabsKey}
         onSetFrequency={handleSetFrequency}
       />
     </div>

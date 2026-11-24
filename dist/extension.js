@@ -23948,12 +23948,12 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode6 = __toESM(require("vscode"));
+var vscode7 = __toESM(require("vscode"));
 
 // src/extension/providers/characterViewProvider.ts
 var vscode = __toESM(require("vscode"));
 var CharacterViewProvider = class {
-  constructor(_extensionUri, _secretStorage, _geminiService, _contextEngine, _personalityEngine, _proactiveEngine, _audioClipsService, _neuralVoiceService) {
+  constructor(_extensionUri, _secretStorage, _geminiService, _contextEngine, _personalityEngine, _proactiveEngine, _audioClipsService, _neuralVoiceService, _elevenLabsService) {
     this._extensionUri = _extensionUri;
     this._secretStorage = _secretStorage;
     this._geminiService = _geminiService;
@@ -23962,6 +23962,7 @@ var CharacterViewProvider = class {
     this._proactiveEngine = _proactiveEngine;
     this._audioClipsService = _audioClipsService;
     this._neuralVoiceService = _neuralVoiceService;
+    this._elevenLabsService = _elevenLabsService;
   }
   static viewType = "aiBuddy.characterView";
   _view;
@@ -23992,6 +23993,14 @@ var CharacterViewProvider = class {
     return this._audioClipsService.getRandomClipDataUri(persona);
   }
   async _getAudioForText(text, persona, skipGeminiTTS = false) {
+    if (this._elevenLabsService) {
+      try {
+        const elevenAudio = await this._elevenLabsService.synthesize(text, persona);
+        if (elevenAudio) return elevenAudio;
+      } catch (err) {
+        console.warn("[CharacterViewProvider] ElevenLabs enterprise audio error:", err);
+      }
+    }
     if (!skipGeminiTTS) {
       try {
         const apiKey = await this._secretStorage.getApiKey();
@@ -24023,11 +24032,13 @@ var CharacterViewProvider = class {
       case "ready": {
         const quietMode = config.get("quietMode", false);
         const hasApiKey = await this._secretStorage.hasApiKey();
+        const hasElevenLabsKey = await this._secretStorage.hasElevenLabsApiKey();
         const contextSummary = this._contextEngine.getCurrentSummary() || void 0;
         this.postMessage({
           type: "init",
           voiceGender,
           hasApiKey,
+          hasElevenLabsKey,
           quietMode,
           modelName,
           proactiveFrequency,
@@ -24133,6 +24144,13 @@ var CharacterViewProvider = class {
         const hasKey = await this._secretStorage.hasApiKey();
         this.postMessage({ type: "apiKeyStatus", hasKey });
         vscode.window.showInformationMessage("AI Buddy: Gemini API key stored securely in SecretStorage!");
+        break;
+      }
+      case "setElevenLabsApiKey": {
+        await this._secretStorage.setElevenLabsApiKey(message.key);
+        const hasKey = await this._secretStorage.hasElevenLabsApiKey();
+        this.postMessage({ type: "elevenLabsApiKeyStatus", hasKey });
+        vscode.window.showInformationMessage("AI Buddy: ElevenLabs Enterprise Voice API key stored securely in SecretStorage!");
         break;
       }
       case "checkApiKey": {
@@ -25532,6 +25550,7 @@ var SecretStorageService = class _SecretStorageService {
     this.secretStorage = secretStorage;
   }
   static KEY_NAME = "aiBuddy.geminiApiKey";
+  static ELEVENLABS_KEY_NAME = "aiBuddy.elevenLabsApiKey";
   async getApiKey() {
     const secret = await this.secretStorage.get(_SecretStorageService.KEY_NAME);
     if (secret && secret.trim().length > 0) {
@@ -25547,8 +25566,9 @@ var SecretStorageService = class _SecretStorageService {
         const keyUri = vscode2.Uri.joinPath(rootPath, "apikey.md");
         const content = await vscode2.workspace.fs.readFile(keyUri);
         const text = new TextDecoder().decode(content).trim();
-        if (text && text.length > 10) {
-          return text;
+        const firstLine = text.split(/\r?\n/)[0].trim();
+        if (firstLine && firstLine.length > 10 && !firstLine.startsWith("elevenlabs")) {
+          return firstLine;
         }
       }
     } catch (e) {
@@ -25568,6 +25588,41 @@ var SecretStorageService = class _SecretStorageService {
   }
   async deleteApiKey() {
     await this.secretStorage.delete(_SecretStorageService.KEY_NAME);
+  }
+  async getElevenLabsApiKey() {
+    const secret = await this.secretStorage.get(_SecretStorageService.ELEVENLABS_KEY_NAME);
+    if (secret && secret.trim().length > 0) {
+      return secret.trim();
+    }
+    if (process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim().length > 0) {
+      return process.env.ELEVENLABS_API_KEY.trim();
+    }
+    try {
+      const workspaceFolders = vscode2.workspace.workspaceFolders;
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const rootPath = workspaceFolders[0].uri;
+        const keyUri = vscode2.Uri.joinPath(rootPath, "apikey.md");
+        const content = await vscode2.workspace.fs.readFile(keyUri);
+        const text = new TextDecoder().decode(content);
+        const match = text.match(/elevenlabs\s*:\s*["']?([a-zA-Z0-9_-]+)/i);
+        if (match && match[1].length > 10) {
+          return match[1].trim();
+        }
+      }
+    } catch (e) {
+    }
+    return void 0;
+  }
+  async setElevenLabsApiKey(key) {
+    if (!key || key.trim().length === 0) {
+      await this.secretStorage.delete(_SecretStorageService.ELEVENLABS_KEY_NAME);
+    } else {
+      await this.secretStorage.store(_SecretStorageService.ELEVENLABS_KEY_NAME, key.trim());
+    }
+  }
+  async hasElevenLabsApiKey() {
+    const key = await this.getElevenLabsApiKey();
+    return !!key && key.length > 0;
   }
 };
 
@@ -26526,6 +26581,138 @@ var NeuralVoiceService = class _NeuralVoiceService {
   }
 };
 
+// src/extension/services/elevenLabsService.ts
+var vscode6 = __toESM(require("vscode"));
+var ElevenLabsService = class _ElevenLabsService {
+  constructor(secretStorage) {
+    this.secretStorage = secretStorage;
+  }
+  static MAX_CACHE_ITEMS = 200;
+  audioCache = /* @__PURE__ */ new Map();
+  accountVoicesCache = null;
+  lastVoicesFetch = 0;
+  // Default high-expression character voice mapping from ElevenLabs library
+  static DEFAULT_VOICE_MAP = {
+    vadivelu: "N2lVS1w4EtoT3dr4eOWO",
+    // Callum - Husky Trickster (dramatic comedic acting)
+    santhanam: "IKne3meq5aSn9XLyUdCD",
+    // Charlie - Deep, confident, hyped counters
+    small_boy: "TX3LPaxmHKxFdv7VOQHJ",
+    // Liam - Energetic youthful voice
+    maya: "cgSgspJ2msm6clMCkdW9",
+    // Jessica - Playful, bright, warm female
+    female: "cgSgspJ2msm6clMCkdW9",
+    male: "IKne3meq5aSn9XLyUdCD"
+  };
+  /**
+   * Synthesize any dynamic text using ElevenLabs Enterprise Voice AI.
+   * Returns standard MP3 Data URI: data:audio/mp3;base64,...
+   */
+  async synthesize(text, persona) {
+    try {
+      if (!text || !text.trim()) return void 0;
+      const apiKey = await this.secretStorage.getElevenLabsApiKey();
+      if (!apiKey) return void 0;
+      let cleanText = text.replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/[#*`_~]/g, "").replace(/\s+/g, " ").trim();
+      if (!cleanText) return void 0;
+      if (cleanText.length > 350) {
+        const lastPunctuation = cleanText.slice(0, 350).lastIndexOf(".");
+        if (lastPunctuation > 100) {
+          cleanText = cleanText.slice(0, lastPunctuation + 1);
+        } else {
+          cleanText = cleanText.slice(0, 350).trim() + "...";
+        }
+      }
+      const cacheKey = `${persona}:${cleanText}`;
+      if (this.audioCache.has(cacheKey)) {
+        return this.audioCache.get(cacheKey);
+      }
+      const voiceId = await this.resolveVoiceId(persona, apiKey);
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.8,
+            style: 0.35,
+            use_speaker_boost: true
+          }
+        })
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`[ElevenLabsService] API error (${response.status}):`, errText);
+        return void 0;
+      }
+      const arrayBuf = await response.arrayBuffer();
+      const base64Audio = Buffer.from(arrayBuf).toString("base64");
+      const dataUri = `data:audio/mp3;base64,${base64Audio}`;
+      if (this.audioCache.size >= _ElevenLabsService.MAX_CACHE_ITEMS) {
+        const oldest = this.audioCache.keys().next().value;
+        if (oldest) this.audioCache.delete(oldest);
+      }
+      this.audioCache.set(cacheKey, dataUri);
+      return dataUri;
+    } catch (err) {
+      console.warn("[ElevenLabsService] Speech synthesis error:", err);
+      return void 0;
+    }
+  }
+  async resolveVoiceId(persona, apiKey) {
+    const config = vscode6.workspace.getConfiguration("aiBuddy");
+    const settingKey = `elevenLabsVoice_${persona}`;
+    const customVoiceId = config.get(settingKey);
+    if (customVoiceId && customVoiceId.trim().length > 0) {
+      return customVoiceId.trim();
+    }
+    try {
+      const accountVoices = await this.getAccountVoices(apiKey);
+      if (accountVoices) {
+        const targetName = persona.toLowerCase().replace(/_/g, "");
+        const matched = accountVoices.find((v) => {
+          const vName = v.name.toLowerCase().replace(/[\s_-]/g, "");
+          return vName.includes(targetName);
+        });
+        if (matched) {
+          return matched.voice_id;
+        }
+      }
+    } catch (e) {
+    }
+    return _ElevenLabsService.DEFAULT_VOICE_MAP[persona] || _ElevenLabsService.DEFAULT_VOICE_MAP.vadivelu;
+  }
+  async getAccountVoices(apiKey) {
+    const now = Date.now();
+    if (this.accountVoicesCache && now - this.lastVoicesFetch < 3e5) {
+      return this.accountVoicesCache;
+    }
+    try {
+      const res = await fetch("https://api.elevenlabs.io/v1/voices", {
+        headers: { "xi-api-key": apiKey }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.voices && Array.isArray(data.voices)) {
+          this.accountVoicesCache = data.voices.map((v) => ({
+            voice_id: v.voice_id,
+            name: v.name
+          }));
+          this.lastVoicesFetch = now;
+          return this.accountVoicesCache;
+        }
+      }
+    } catch (e) {
+    }
+    return null;
+  }
+};
+
 // src/extension/extension.ts
 function activate(context) {
   console.log("AI Buddy activating with Proactive Personality & Humour Engine...");
@@ -26534,12 +26721,13 @@ function activate(context) {
   const personalityEngine = new PersonalityEngine();
   const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);
   const audioClipsService = new AudioClipsService(context.extensionPath);
-  if (vscode6.workspace.workspaceFolders) {
-    for (const folder of vscode6.workspace.workspaceFolders) {
+  if (vscode7.workspace.workspaceFolders) {
+    for (const folder of vscode7.workspace.workspaceFolders) {
       audioClipsService.addSearchDirectory(folder.uri.fsPath);
     }
   }
   const neuralVoiceService = new NeuralVoiceService();
+  const elevenLabsService = new ElevenLabsService(secretStorage);
   let characterProvider;
   const proactiveEngine = new ProactiveDecisionEngine(
     personalityEngine,
@@ -26562,7 +26750,8 @@ function activate(context) {
     personalityEngine,
     proactiveEngine,
     audioClipsService,
-    neuralVoiceService
+    neuralVoiceService,
+    elevenLabsService
   );
   const workspaceMonitor = new WorkspaceMonitorService(contextEngine, proactiveEngine, {
     onContextChanged: (summary) => {
@@ -26595,15 +26784,15 @@ function activate(context) {
     }
   });
   context.subscriptions.push(
-    vscode6.window.registerWebviewViewProvider(CharacterViewProvider.viewType, characterProvider, {
+    vscode7.window.registerWebviewViewProvider(CharacterViewProvider.viewType, characterProvider, {
       webviewOptions: {
         retainContextWhenHidden: true
       }
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.setApiKey", async () => {
-      const apiKey = await vscode6.window.showInputBox({
+    vscode7.commands.registerCommand("aiBuddy.setApiKey", async () => {
+      const apiKey = await vscode7.window.showInputBox({
         title: "AI Buddy: Enter Google Gemini API Key",
         prompt: "Get your free key from https://aistudio.google.com/app/apikey",
         password: true,
@@ -26611,15 +26800,30 @@ function activate(context) {
       });
       if (apiKey !== void 0) {
         await secretStorage.setApiKey(apiKey);
-        vscode6.window.showInformationMessage("AI Buddy: Gemini API Key saved successfully in SecretStorage!");
+        vscode7.window.showInformationMessage("AI Buddy: Gemini API Key saved successfully in SecretStorage!");
         characterProvider.postMessage({ type: "apiKeyStatus", hasKey: !!apiKey });
       }
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.tellJoke", () => {
+    vscode7.commands.registerCommand("aiBuddy.setElevenLabsApiKey", async () => {
+      const apiKey = await vscode7.window.showInputBox({
+        title: "AI Buddy: Enter ElevenLabs Enterprise Voice API Key",
+        prompt: "Get your key from https://elevenlabs.io (sk_...)",
+        password: true,
+        placeHolder: "sk_..."
+      });
+      if (apiKey !== void 0) {
+        await secretStorage.setElevenLabsApiKey(apiKey);
+        vscode7.window.showInformationMessage("AI Buddy: ElevenLabs Enterprise Voice API Key saved successfully in SecretStorage!");
+        characterProvider.postMessage({ type: "elevenLabsApiKeyStatus", hasKey: !!apiKey });
+      }
+    })
+  );
+  context.subscriptions.push(
+    vscode7.commands.registerCommand("aiBuddy.tellJoke", () => {
       const joke = personalityEngine.getRandomJoke();
-      const config = vscode6.workspace.getConfiguration("aiBuddy");
+      const config = vscode7.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       characterProvider.postMessage({
         type: "characterReply",
@@ -26630,14 +26834,14 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.analyzeWorkspace", async () => {
+    vscode7.commands.registerCommand("aiBuddy.analyzeWorkspace", async () => {
       const summary = await contextEngine.analyzeWorkspace();
-      const config = vscode6.workspace.getConfiguration("aiBuddy");
+      const config = vscode7.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       const model = config.get("geminiModel", "gemini-1.5-flash");
-      vscode6.window.withProgress(
+      vscode7.window.withProgress(
         {
-          location: vscode6.ProgressLocation.Notification,
+          location: vscode7.ProgressLocation.Notification,
           title: "AI Buddy is analyzing your workspace..."
         },
         async () => {
@@ -26653,9 +26857,9 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.explainError", async () => {
+    vscode7.commands.registerCommand("aiBuddy.explainError", async () => {
       const summary = await contextEngine.analyzeWorkspace();
-      const config = vscode6.workspace.getConfiguration("aiBuddy");
+      const config = vscode7.workspace.getConfiguration("aiBuddy");
       const gender = config.get("voiceGender", "female");
       const model = config.get("geminiModel", "gemini-1.5-flash");
       const reply = await geminiService.explainCurrentError(summary, gender, model);
@@ -26668,21 +26872,21 @@ function activate(context) {
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.toggleVoice", async () => {
-      const config = vscode6.workspace.getConfiguration("aiBuddy");
+    vscode7.commands.registerCommand("aiBuddy.toggleVoice", async () => {
+      const config = vscode7.workspace.getConfiguration("aiBuddy");
       const current = config.get("voiceGender", "female");
       const next = current === "female" ? "male" : "female";
-      await config.update("voiceGender", next, vscode6.ConfigurationTarget.Global);
-      vscode6.window.showInformationMessage(
+      await config.update("voiceGender", next, vscode7.ConfigurationTarget.Global);
+      vscode7.window.showInformationMessage(
         `AI Buddy: Voice switched to ${next === "female" ? "Female (Maya)" : "Male (Vikram)"}`
       );
       characterProvider.postMessage({ type: "voiceChanged", gender: next });
     })
   );
   context.subscriptions.push(
-    vscode6.commands.registerCommand("aiBuddy.resetSession", () => {
+    vscode7.commands.registerCommand("aiBuddy.resetSession", () => {
       geminiService.clearHistory();
-      vscode6.window.showInformationMessage("AI Buddy: Conversation history reset.");
+      vscode7.window.showInformationMessage("AI Buddy: Conversation history reset.");
     })
   );
   console.log("AI Buddy extension fully activated with Proactive Conversations!");

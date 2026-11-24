@@ -8623,19 +8623,29 @@
   var SettingsModal = ({
     isOpen,
     hasApiKey,
+    hasElevenLabsKey,
     proactiveFrequency,
     contextSummary,
     onClose,
     onSaveKey,
+    onSaveElevenLabsKey,
     onSetFrequency
   }) => {
     const [inputKey, setInputKey] = (0, import_react5.useState)("");
+    const [inputElevenKey, setInputElevenKey] = (0, import_react5.useState)("");
     if (!isOpen) return null;
     const handleSave = () => {
-      onSaveKey(inputKey);
+      if (inputKey.trim()) {
+        onSaveKey(inputKey.trim());
+      }
+      if (inputElevenKey.trim() && onSaveElevenLabsKey) {
+        onSaveElevenLabsKey(inputElevenKey.trim());
+      }
       setInputKey("");
+      setInputElevenKey("");
       onClose();
     };
+    const canSave = inputKey.trim().length > 0 || inputElevenKey.trim().length > 0;
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "modal-backdrop", onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "settings-modal", onClick: (e) => e.stopPropagation(), children: [
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "modal-header", children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "modal-title", children: [
@@ -8647,10 +8657,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "modal-body", children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "api-status-banner", children: hasApiKey ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "status-badge configured", children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ShieldCheck, { size: 16 }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Gemini API Key configured in OS SecretStorage" })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Gemini API Key configured" })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "status-badge missing", children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ShieldAlert, { size: 16 }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "API Key missing \u2013 AI Buddy requires Gemini API" })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Gemini Key missing \u2013 requires Gemini API" })
         ] }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { className: "input-label", children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Google Gemini API Key:" }),
@@ -8674,6 +8684,39 @@
             className: "get-key-link",
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Get a free Gemini API Key from Google AI Studio" }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ExternalLink, { size: 13 })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "api-status-banner", style: { marginTop: "4px" }, children: hasElevenLabsKey ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "status-badge configured", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ShieldCheck, { size: 16 }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "ElevenLabs Enterprise Voice active \u{1F399}\uFE0F" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "status-badge missing", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Sparkles, { size: 16 }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "ElevenLabs Voice optional (Natural human voice)" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { className: "input-label", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "ElevenLabs Voice API Key (Studio Natural Voice):" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+            "input",
+            {
+              type: "password",
+              className: "key-input",
+              placeholder: "Paste your ElevenLabs key (sk_...)",
+              value: inputElevenKey,
+              onChange: (e) => setInputElevenKey(e.target.value)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+          "a",
+          {
+            href: "https://elevenlabs.io",
+            target: "_blank",
+            rel: "noreferrer",
+            className: "get-key-link",
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Get an ElevenLabs Voice key from elevenlabs.io" }),
               /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ExternalLink, { size: 13 })
             ]
           }
@@ -8728,10 +8771,10 @@
           {
             className: "btn-primary",
             onClick: handleSave,
-            disabled: !inputKey.trim(),
+            disabled: !canSave,
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Save, { size: 14 }),
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Save Key" })
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Save Keys" })
             ]
           }
         )
@@ -8745,6 +8788,7 @@
     const [characterState, setCharacterState] = (0, import_react6.useState)("idle");
     const [voiceGender, setVoiceGender] = (0, import_react6.useState)("female");
     const [hasApiKey, setHasApiKey] = (0, import_react6.useState)(false);
+    const [hasElevenLabsKey, setHasElevenLabsKey] = (0, import_react6.useState)(false);
     const [quietMode, setQuietMode] = (0, import_react6.useState)(false);
     const [proactiveFrequency, setProactiveFrequency] = (0, import_react6.useState)("medium");
     const [currentText, setCurrentText] = (0, import_react6.useState)(
@@ -8803,6 +8847,9 @@
           case "init":
             setVoiceGender(message.voiceGender);
             setHasApiKey(message.hasApiKey);
+            if (message.hasElevenLabsKey !== void 0) {
+              setHasElevenLabsKey(message.hasElevenLabsKey);
+            }
             setQuietMode(message.quietMode);
             if (message.proactiveFrequency) {
               setProactiveFrequency(message.proactiveFrequency);
@@ -8875,6 +8922,13 @@
             setHasApiKey(message.hasKey);
             if (message.hasKey) {
               setCurrentText("Mass! API Key connect aagiduchu! Ippo unga coding buddy ready! \u{1F525}");
+              setCharacterState("happy");
+            }
+            break;
+          case "elevenLabsApiKeyStatus":
+            setHasElevenLabsKey(message.hasKey);
+            if (message.hasKey) {
+              setCurrentText("Super! ElevenLabs Studio Voice AI connected! Enterprise natural voice activated! \u{1F399}\uFE0F\u2728");
               setCharacterState("happy");
             }
             break;
@@ -8996,6 +9050,9 @@
     const handleSaveApiKey = (key) => {
       getVsCodeApi().postMessage({ type: "setApiKey", key });
     };
+    const handleSaveElevenLabsKey = (key) => {
+      getVsCodeApi().postMessage({ type: "setElevenLabsApiKey", key });
+    };
     const handleClearHistory = () => {
       setMessages([]);
       getVsCodeApi().postMessage({ type: "clearHistory" });
@@ -9102,10 +9159,12 @@
         {
           isOpen: isSettingsOpen,
           hasApiKey,
+          hasElevenLabsKey,
           proactiveFrequency,
           contextSummary,
           onClose: () => setIsSettingsOpen(false),
           onSaveKey: handleSaveApiKey,
+          onSaveElevenLabsKey: handleSaveElevenLabsKey,
           onSetFrequency: handleSetFrequency
         }
       )

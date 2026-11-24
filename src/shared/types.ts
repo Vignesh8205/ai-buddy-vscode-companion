@@ -67,6 +67,7 @@ export type WebviewToHostMessage =
   | { type: 'sendMessage'; text: string }
   | { type: 'setVoice'; gender: VoiceGender }
   | { type: 'setApiKey'; key: string }
+  | { type: 'setElevenLabsApiKey'; key: string }
   | { type: 'checkApiKey' }
   | { type: 'clearHistory' }
   | { type: 'stateChanged'; state: CharacterState }
@@ -80,6 +81,7 @@ export type HostToWebviewMessage =
       type: 'init';
       voiceGender: VoiceGender;
       hasApiKey: boolean;
+      hasElevenLabsKey?: boolean;
       quietMode: boolean;
       modelName: string;
       proactiveFrequency: ProactiveFrequency;
@@ -102,6 +104,7 @@ export type HostToWebviewMessage =
     }
   | { type: 'thinking' }
   | { type: 'apiKeyStatus'; hasKey: boolean }
+  | { type: 'elevenLabsApiKeyStatus'; hasKey: boolean }
   | { type: 'voiceChanged'; gender: VoiceGender }
   | { type: 'frequencyChanged'; frequency: ProactiveFrequency }
   | { type: 'contextUpdated'; summary: ProjectSummary }

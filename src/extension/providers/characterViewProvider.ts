@@ -14,6 +14,7 @@ import { PersonalityEngine } from '../services/personalityEngine';
 import { ProactiveDecisionEngine } from '../services/proactiveEngine';
 import { AudioClipsService } from '../services/audioClipsService';
 import { NeuralVoiceService } from '../services/neuralVoiceService';
+import { ElevenLabsService } from '../services/elevenLabsService';
 
 export class CharacterViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiBuddy.characterView';
@@ -28,7 +29,8 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     private readonly _personalityEngine: PersonalityEngine,
     private readonly _proactiveEngine: ProactiveDecisionEngine,
     private readonly _audioClipsService?: AudioClipsService,
-    private readonly _neuralVoiceService?: NeuralVoiceService
+    private readonly _neuralVoiceService?: NeuralVoiceService,
+    private readonly _elevenLabsService?: ElevenLabsService
   ) {}
 
   public resolveWebviewView(
@@ -71,7 +73,17 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
     persona: VoiceGender,
     skipGeminiTTS = false
   ): Promise<string | undefined> {
-    // 1. Primary: Gemini Conversational Native Audio (Human-like tone, laughs, natural prosody)
+    // 1. Enterprise Priority: ElevenLabs Enterprise Human Voice (Studio quality, real human cadence & acting)
+    if (this._elevenLabsService) {
+      try {
+        const elevenAudio = await this._elevenLabsService.synthesize(text, persona);
+        if (elevenAudio) return elevenAudio;
+      } catch (err) {
+        console.warn('[CharacterViewProvider] ElevenLabs enterprise audio error:', err);
+      }
+    }
+
+    // 2. Secondary: Gemini Conversational Native Audio (Human-like tone, laughs, natural prosody)
     if (!skipGeminiTTS) {
       try {
         const apiKey = await this._secretStorage.getApiKey();
@@ -84,7 +96,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // 2. Secondary Fallback: Refined Free Neural Voice (Zero pitch distortion, 0 API tokens)
+    // 3. Tertiary Fallback: Refined Free Neural Voice (Zero pitch distortion, 0 API tokens)
     if (this._neuralVoiceService) {
       try {
         const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
@@ -94,7 +106,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // 3. Fallback: Pre-recorded audio clip
+    // 4. Fallback: Pre-recorded character audio clip
     return this._getAudioClipForPersona(persona);
   }
 
@@ -110,12 +122,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
       case 'ready': {
         const quietMode = config.get<boolean>('quietMode', false);
         const hasApiKey = await this._secretStorage.hasApiKey();
+        const hasElevenLabsKey = await this._secretStorage.hasElevenLabsApiKey();
         const contextSummary = this._contextEngine.getCurrentSummary() || undefined;
 
         this.postMessage({
           type: 'init',
           voiceGender,
           hasApiKey,
+          hasElevenLabsKey,
           quietMode,
           modelName,
           proactiveFrequency,
@@ -241,6 +255,14 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         const hasKey = await this._secretStorage.hasApiKey();
         this.postMessage({ type: 'apiKeyStatus', hasKey });
         vscode.window.showInformationMessage('AI Buddy: Gemini API key stored securely in SecretStorage!');
+        break;
+      }
+
+      case 'setElevenLabsApiKey': {
+        await this._secretStorage.setElevenLabsApiKey(message.key);
+        const hasKey = await this._secretStorage.hasElevenLabsApiKey();
+        this.postMessage({ type: 'elevenLabsApiKeyStatus', hasKey });
+        vscode.window.showInformationMessage('AI Buddy: ElevenLabs Enterprise Voice API key stored securely in SecretStorage!');
         break;
       }
 

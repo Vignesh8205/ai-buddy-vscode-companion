@@ -8,37 +8,51 @@ import {
   Lock,
   EyeOff,
   BellRing,
+  Sparkles,
 } from 'lucide-react';
 import { ProactiveFrequency, ProjectSummary } from '../../../shared/types';
 
 interface SettingsModalProps {
   isOpen: boolean;
   hasApiKey: boolean;
+  hasElevenLabsKey?: boolean;
   proactiveFrequency: ProactiveFrequency;
   contextSummary?: ProjectSummary | null;
   onClose: () => void;
   onSaveKey: (key: string) => void;
+  onSaveElevenLabsKey?: (key: string) => void;
   onSetFrequency: (freq: ProactiveFrequency) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   hasApiKey,
+  hasElevenLabsKey,
   proactiveFrequency,
   contextSummary,
   onClose,
   onSaveKey,
+  onSaveElevenLabsKey,
   onSetFrequency,
 }) => {
   const [inputKey, setInputKey] = useState('');
+  const [inputElevenKey, setInputElevenKey] = useState('');
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    onSaveKey(inputKey);
+    if (inputKey.trim()) {
+      onSaveKey(inputKey.trim());
+    }
+    if (inputElevenKey.trim() && onSaveElevenLabsKey) {
+      onSaveElevenLabsKey(inputElevenKey.trim());
+    }
     setInputKey('');
+    setInputElevenKey('');
     onClose();
   };
+
+  const canSave = inputKey.trim().length > 0 || inputElevenKey.trim().length > 0;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -54,17 +68,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="modal-body">
-          {/* API Key Status */}
+          {/* Gemini API Key Status */}
           <div className="api-status-banner">
             {hasApiKey ? (
               <div className="status-badge configured">
                 <ShieldCheck size={16} />
-                <span>Gemini API Key configured in OS SecretStorage</span>
+                <span>Gemini API Key configured</span>
               </div>
             ) : (
               <div className="status-badge missing">
                 <ShieldAlert size={16} />
-                <span>API Key missing – AI Buddy requires Gemini API</span>
+                <span>Gemini Key missing – requires Gemini API</span>
               </div>
             )}
           </div>
@@ -87,6 +101,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="get-key-link"
           >
             <span>Get a free Gemini API Key from Google AI Studio</span>
+            <ExternalLink size={13} />
+          </a>
+
+          {/* ElevenLabs Enterprise Voice AI */}
+          <div className="api-status-banner" style={{ marginTop: '4px' }}>
+            {hasElevenLabsKey ? (
+              <div className="status-badge configured">
+                <ShieldCheck size={16} />
+                <span>ElevenLabs Enterprise Voice active 🎙️</span>
+              </div>
+            ) : (
+              <div className="status-badge missing">
+                <Sparkles size={16} />
+                <span>ElevenLabs Voice optional (Natural human voice)</span>
+              </div>
+            )}
+          </div>
+
+          <label className="input-label">
+            <span>ElevenLabs Voice API Key (Studio Natural Voice):</span>
+            <input
+              type="password"
+              className="key-input"
+              placeholder="Paste your ElevenLabs key (sk_...)"
+              value={inputElevenKey}
+              onChange={e => setInputElevenKey(e.target.value)}
+            />
+          </label>
+
+          <a
+            href="https://elevenlabs.io"
+            target="_blank"
+            rel="noreferrer"
+            className="get-key-link"
+          >
+            <span>Get an ElevenLabs Voice key from elevenlabs.io</span>
             <ExternalLink size={13} />
           </a>
 
@@ -146,10 +196,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             className="btn-primary"
             onClick={handleSave}
-            disabled={!inputKey.trim()}
+            disabled={!canSave}
           >
             <Save size={14} />
-            <span>Save Key</span>
+            <span>Save Keys</span>
           </button>
         </div>
       </div>
