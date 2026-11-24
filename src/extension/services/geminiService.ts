@@ -136,7 +136,7 @@ CONVERSATION & PERSONALITY RULES:
                   prebuiltVoiceConfig: { voiceName },
                 },
               },
-            },
+            } as any,
           });
 
           const audioPromise = ttsModel.generateContent(cleanText);
