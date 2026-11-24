@@ -143,12 +143,27 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
 
       case 'tellJoke': {
         this._proactiveEngine.recordUserActivity();
-        const joke = this._personalityEngine.getRandomJoke();
-        const audioData = await this._getAudioForText(joke.text, voiceGender);
+        this.postMessage({ type: 'thinking' });
+
+        let summary = this._contextEngine.getCurrentSummary();
+        if (!summary) {
+          summary = await this._contextEngine.analyzeWorkspace();
+        }
+
+        let jokeReply: { text: string; emotion: CharacterState; audioData?: string };
+        const hasKey = await this._secretStorage.hasApiKey();
+        if (hasKey) {
+          jokeReply = await this._geminiService.generateSituationalJoke(summary, voiceGender, modelName);
+        } else {
+          const fallback = this._personalityEngine.getSituationalJoke(voiceGender, summary);
+          jokeReply = { text: fallback.text, emotion: fallback.emotion };
+        }
+
+        const audioData = jokeReply.audioData || (await this._getAudioForText(jokeReply.text, voiceGender));
         this.postMessage({
           type: 'characterReply',
-          text: joke.text,
-          emotion: joke.emotion,
+          text: jokeReply.text,
+          emotion: jokeReply.emotion,
           voiceGender,
           audioData,
         });

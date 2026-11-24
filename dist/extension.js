@@ -24055,12 +24055,24 @@ var CharacterViewProvider = class {
       }
       case "tellJoke": {
         this._proactiveEngine.recordUserActivity();
-        const joke = this._personalityEngine.getRandomJoke();
-        const audioData = await this._getAudioForText(joke.text, voiceGender);
+        this.postMessage({ type: "thinking" });
+        let summary = this._contextEngine.getCurrentSummary();
+        if (!summary) {
+          summary = await this._contextEngine.analyzeWorkspace();
+        }
+        let jokeReply;
+        const hasKey = await this._secretStorage.hasApiKey();
+        if (hasKey) {
+          jokeReply = await this._geminiService.generateSituationalJoke(summary, voiceGender, modelName);
+        } else {
+          const fallback = this._personalityEngine.getSituationalJoke(voiceGender, summary);
+          jokeReply = { text: fallback.text, emotion: fallback.emotion };
+        }
+        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender);
         this.postMessage({
           type: "characterReply",
-          text: joke.text,
-          emotion: joke.emotion,
+          text: jokeReply.text,
+          emotion: jokeReply.emotion,
           voiceGender,
           audioData
         });
@@ -25452,6 +25464,49 @@ When the user talks about their project, active file, or errors, use the context
     const prompt = `Give a friendly 1-2 sentence witty Tanglish reaction to my current project: Project is ${summary.projectName}, type is ${summary.projectType}, primary language is ${summary.primaryLanguage}, frameworks are ${summary.frameworks.join(", ") || "none"}, active file is ${summary.activeFile?.name || "none"}.`;
     return this.generateReply(prompt, gender, modelName, summary);
   }
+  async generateSituationalJoke(summary, gender, modelName = DEFAULT_GEMINI_MODEL) {
+    const activeFile = summary?.activeFile?.name;
+    const activeLine = summary?.activeFile?.cursorLine;
+    const lang = summary?.activeFile?.languageId || summary?.primaryLanguage || "Code";
+    const errors = summary?.diagnosticsSummary?.errorCount || 0;
+    const topError = summary?.diagnosticsSummary?.topErrors?.[0]?.message;
+    const frameworks = summary?.frameworks?.join(", ");
+    const hour = (/* @__PURE__ */ new Date()).getHours();
+    let timeMood = "normal work hours";
+    if (hour >= 23 || hour < 5) timeMood = "late night 2 AM sleepless coder zombie mode";
+    else if (hour >= 5 && hour < 9) timeMood = "early morning sleepy coffee coding";
+    else if (hour >= 13 && hour <= 15) timeMood = "post-lunch food coma sleepy coding";
+    const comedyAngles = [
+      'roast the developer for writing code without comments or using "any" type',
+      "hilarious observation about the active file and framework being used",
+      "dramatic reaction to whether the code will crash or work on first run",
+      "witty joke about async await, infinite loops, or coffee consumption",
+      'teasing about git commit messages like "fix bug final final v2"',
+      "funny movie reference comparing coding to a dramatic scene",
+      "roasting console.log everywhere instead of using a debugger",
+      "joke about Stack Overflow, copy-pasting code, and praying it runs"
+    ];
+    const randomAngle = comedyAngles[Math.floor(Math.random() * comedyAngles.length)];
+    let situationDetails = `Active File: ${activeFile || "none"}, Language: ${lang}, Line: ${activeLine || "N/A"}, Time mood: ${timeMood}.`;
+    if (errors > 0 && topError) {
+      situationDetails += ` Current situation: Developer has ${errors} errors in their code right now! Top error: "${topError.slice(0, 80)}".`;
+    } else {
+      situationDetails += ` Current situation: No compiler errors, but developer wants a fresh situational laugh!`;
+    }
+    if (frameworks) {
+      situationDetails += ` Frameworks: ${frameworks}.`;
+    }
+    const prompt = `CRITICAL TASK: Generate a brand NEW, FRESH, SITUATION-BASED Tanglish comedy punchline / joke!
+SITUATION: ${situationDetails}
+COMEDY ANGLE FOR THIS JOKE: ${randomAngle}
+RULES:
+1. Make it SPECIFIC to the situation (referencing the active file, errors, language, or coding habits).
+2. MUST BE DIFFERENT from generic jokes. DO NOT use "Why do programmers prefer dark mode" or "tea shop async".
+3. Keep it punchy (1-2 sentences).
+4. MUST start with an emotion tag like [laughing] or [happy].
+5. Natural conversational Tanglish (Tamil + English coding terms).`;
+    return this.generateReply(prompt, gender, modelName, summary);
+  }
   parseEmotionTag(rawText) {
     const emotionMatch = rawText.match(
       /^\[(idle|listening|thinking|speaking|laughing|happy|confused|surprised|sad)\]\s*(.*)$/i
@@ -25825,6 +25880,149 @@ var WorkspaceMonitorService = class {
 // src/extension/services/personalityEngine.ts
 var PersonalityEngine = class {
   usedJokeIndices = /* @__PURE__ */ new Set();
+  usedSituationalJokeTexts = /* @__PURE__ */ new Set();
+  getSituationalJoke(gender, summary) {
+    const isVadivelu = gender === "vadivelu";
+    const isSanthanam = gender === "santhanam";
+    const isSmallBoy = gender === "small_boy";
+    const errors = summary?.diagnosticsSummary?.errorCount || 0;
+    const activeFileName = summary?.activeFile?.name || "";
+    const ext = activeFileName.split(".").pop()?.toLowerCase() || "";
+    const hour = (/* @__PURE__ */ new Date()).getHours();
+    const candidates = [];
+    if (errors > 0) {
+      if (isVadivelu) {
+        candidates.push(
+          { text: `Aiyoo kadavule! ${activeFileName ? activeFileName + "-la" : "Code-la"} ${errors} error-ah paathu compiler-e azhudhidum pola! Sanda na satta kizhiyathaan seiyum! \u{1F602}`, emotion: "laughing" },
+          { text: `Building strong-u, basement romba weak-u da! Red squiggly lines paathaale enakku BP yerudhu! \u{1F602}`, emotion: "confused" },
+          { text: `Aahaa! Enna oru error! Risk edukuradhellam enakku rusk saapdra madhiri, aana indha bug enakku payasam saapdra madhiri irukku! \u{1F602}`, emotion: "laughing" },
+          { text: `Kadavule intha bug-ku oru end card-e illaya?! Naanum evalo thaan adipadaradhu! \u{1F62D}\u{1F602}`, emotion: "confused" }
+        );
+      } else if (isSanthanam) {
+        candidates.push(
+          { text: `Nanba, ${activeFileName || "un code"}-la ${errors} error-ah paatha terminal-ye police station-ku complaint poda odidum pola! \u{1F602}`, emotion: "laughing" },
+          { text: `Enna thalaivaa, code write panriya illa kolam podriya? Bracket-eh open panni close panna maranthutiye! \u{1F602}`, emotion: "laughing" },
+          { text: `Error count paatha cricket score madhiri yeritte pogudhu nanba! Oru coffee kudichitu fresh-ah vaa! \u2615\u{1F602}`, emotion: "happy" },
+          { text: `Adadada... indha bug-ah paatha enakke kizha vizhunthu sirikka thonudhu! Super comedy panni vachiruka! \u{1F602}`, emotion: "laughing" }
+        );
+      } else if (isSmallBoy) {
+        candidates.push(
+          { text: `Anna anna! ${errors} red line vanthuruchu! Keyboard-la entha button thotta intha error odidum anna? \u{1F602}`, emotion: "confused" },
+          { text: `Aiyoo anna, compiler unga mela kovama irukku pola! Naan coffee eduthu varava? \u2615\u{1F602}`, emotion: "laughing" }
+        );
+      } else {
+        candidates.push(
+          { text: `Oops! ${errors} red lines detected! Don't worry, compiler is just being dramatic today! \u{1F602}`, emotion: "laughing" },
+          { text: `Haha indha bug paatha Stack Overflow-ve confuse aagidum pola! Let's squash it together! \u{1F41B}\u2728`, emotion: "happy" }
+        );
+      }
+    }
+    if (ext === "tsx" || ext === "jsx") {
+      if (isVadivelu) {
+        candidates.push(
+          { text: `React component-la infinite re-render aagi laptop fan semma sound varudhu thalaivaa! Fire engine koopdalama?! \u{1F602}`, emotion: "laughing" },
+          { text: `State update aagudhu aana screen-la onnum kaanom! Aahaa enna oru puthisalithanam! \u{1F602}`, emotion: "laughing" }
+        );
+      } else if (isSanthanam) {
+        candidates.push(
+          { text: `useEffect dependency array-ah empty-ah vittutiya nanba? Infinite loop-la un component thiruvizha raattinammadhiri suthudhu! \u{1F602}`, emotion: "laughing" },
+          { text: `Props drilling pannura alavukku bore adikutha nanba? Context API-nu onnu irukku theriyuma? \u{1F602}`, emotion: "happy" }
+        );
+      } else {
+        candidates.push(
+          { text: `React state update aaga maatikithu nu screen-ah paarthu muzhikkuriya? Welcome to frontend life! \u{1F602}`, emotion: "laughing" }
+        );
+      }
+    } else if (ext === "ts") {
+      if (isVadivelu) {
+        candidates.push(
+          { text: `Type 'any' pottu escape aagalam nu paathiya? TypeScript compiler unna paathu sirikithu da! \u{1F602}`, emotion: "laughing" },
+          { text: `Interface, generic, type definition... ellam vachu terminal-ye bayamuruthitiye thalaivaa! \u{1F602}`, emotion: "happy" }
+        );
+      } else if (isSanthanam) {
+        candidates.push(
+          { text: `TypeScript-nu solli ellathukkum ': any' potruka... idhuku plain notepad-laye code ezhudhirukalam nanba! \u{1F602}`, emotion: "laughing" },
+          { text: `Strict null check on pannitu ippo undefined error paathu shock aagi ukkaanthirukka! \u{1F602}`, emotion: "laughing" }
+        );
+      }
+    } else if (ext === "css" || ext === "scss") {
+      candidates.push(
+        { text: isVadivelu ? `Oru div-ah center panna 2 mani neram aagiducha? Innum vertical align aagala! Kadavule! \u{1F602}` : `Flexbox, Grid, Margin auto... ellam pottu paathuten, button mattum corner-la ukkaanthu sirikithu! \u{1F602}`, emotion: "laughing" }
+      );
+    } else if (ext === "py") {
+      candidates.push(
+        { text: isVadivelu ? `Indentation error-ah? Oru space thappu pottadhukku program-e close aagiducha? Aiyoo aiyoo! \u{1F602}` : `Python indentation paathu bayanthutiya nanba? Oru space thappuna program-e strike pannidum! \u{1F602}`, emotion: "laughing" }
+      );
+    } else if (ext === "json") {
+      candidates.push(
+        { text: `node_modules folder weight-ah paatha black hole kooda ulluka poidum pola! Semma dependencies! \u{1F602}`, emotion: "laughing" }
+      );
+    }
+    if (hour >= 22 || hour < 5) {
+      if (isVadivelu) {
+        candidates.push(
+          { text: `Night 11 mani aachu thalaivaa! Innum console.log potu paathutu irukiye! Thookam varalaya illa bug mela kaadhala?! \u{1F602}`, emotion: "laughing" },
+          { text: `Midnight-la code panni bug create panra... kaalaila adhe bug-ah fix panna azhara! Super da! \u{1F602}`, emotion: "laughing" }
+        );
+      } else if (isSanthanam) {
+        candidates.push(
+          { text: `Innaiku night production deploy panriya? Thalaivaa nee romba thairiyasali da! Naalaiku kaalaila terminal paathu azhavaatha! \u{1F602}`, emotion: "laughing" },
+          { text: `Kannu rendum red-ah aagiduchu nanba! Terminal-ah close pannitu bed-la poi padu! \u{1F602}`, emotion: "happy" }
+        );
+      } else if (isSmallBoy) {
+        candidates.push(
+          { text: `Anna innum thoongalaya? Nila kooda thoongiduchu, unga terminal mattum thaan muzhichirukku! \u{1F319}\u{1F602}`, emotion: "laughing" }
+        );
+      }
+    } else if (hour >= 13 && hour <= 15) {
+      candidates.push(
+        { text: isVadivelu ? `Lunch mudichitu code panna ukkaanthiya? Kannu sorugudhu, aana keyboard-la finger fast-ah odudhu! \u{1F602}` : `Biryani saaptutu terminal open panna 'git commit' ku bathila 'git sleep' thaan type aagum! \u{1F602}`, emotion: "laughing" }
+      );
+    }
+    if (isVadivelu) {
+      candidates.push(
+        { text: `Why do programmers prefer dark mode? Because light attracts bugs da! Semma logic la?! \u{1F602}`, emotion: "laughing" },
+        { text: `Real programmer eppavume code comment panna maataan: "Ezhudhum bodhu enakum kadavulukum therinjidhu, ippo kadavulukku mattum thaan theriyum!" \u{1F602}`, emotion: "laughing" },
+        { text: `Git commit message: "fixed minor bug" nu solli 50 files change pannitiye thalaivaa! Aahaa enna oru thiramai! \u{1F602}`, emotion: "laughing" },
+        { text: `Oru developer tea shop ponaan: "Oru tea kudunga, but async-ah kudunga, wait panna mudiyaadhu!" \u{1F602}`, emotion: "laughing" },
+        { text: `Localhost-la run aagudhu, staging-la fail aagudhu! Vella pannalam vella pannalam! \u{1F602}`, emotion: "happy" },
+        { text: `Code-la 10 console.log potu vachiruka... debugger tool unna paathu kanneer vidudhu da! \u{1F602}`, emotion: "laughing" }
+      );
+    } else if (isSanthanam) {
+      candidates.push(
+        { text: `Stack Overflow-la irundhu code copy pannitu variable name kuda maathaama run panriya nanba?! Semma thairiyam! \u{1F602}`, emotion: "laughing" },
+        { text: `Function name 'doSomething' nu vachiruka... enna suspense thriller cinema script-ah ezhudhuruka? \u{1F602}`, emotion: "laughing" },
+        { text: `Testing-e pannama direct-ah production push panriya? Thalaivaa nee developer illa, stunt master da! \u{1F602}`, emotion: "laughing" },
+        { text: `Code-la comments ezhudhuradha paatha diary ezhudhura madhiri irukku... 'Today I fixed bug, tomorrow I cry' nu! \u{1F602}`, emotion: "laughing" },
+        { text: `Client sonna requirement onnu, nee develop pannadhu onnu, ippo render aaguradhu vera onnu! Semma comedy! \u{1F602}`, emotion: "laughing" }
+      );
+    } else if (isSmallBoy) {
+      candidates.push(
+        { text: `Anna anna! 100 line code ezhudhirukinga, aana console.log mattum thaan print aaguthu! Haha semma anna! \u{1F602}`, emotion: "laughing" },
+        { text: `Anna! Coffee kudichitu code pannunga anna, appo thaan brain semma rocket madhiri work pannum! \u{1F680}\u2615`, emotion: "happy" },
+        { text: `Anna, computer-kulla poothu intha bugs-ah ellam naane thurathi vidava? \u{1F602}`, emotion: "laughing" }
+      );
+    } else {
+      candidates.push(
+        { text: `CSS center align panradhukulla oru yugame mudinjidum pola! Flexbox use panriya illa Grid ah? \u{1F602}`, emotion: "laughing" },
+        { text: `Code comments: "I don't know why this works, please don't touch!" Classic developer mood! \u{1F602}`, emotion: "laughing" },
+        { text: `Git commit: "Final fix v3 very final for real this time"! Semma relatable! \u{1F602}`, emotion: "happy" },
+        { text: `There are 10 types of people in the world: binary purinjavan, puriyadhavan! \u{1F609}`, emotion: "happy" }
+      );
+    }
+    let unused = candidates.filter((c) => !this.usedSituationalJokeTexts.has(c.text));
+    if (unused.length === 0) {
+      this.usedSituationalJokeTexts.clear();
+      unused = candidates;
+    }
+    const chosen = unused[Math.floor(Math.random() * unused.length)];
+    this.usedSituationalJokeTexts.add(chosen.text);
+    if (this.usedSituationalJokeTexts.size > 25) {
+      const first = this.usedSituationalJokeTexts.values().next().value;
+      if (first) this.usedSituationalJokeTexts.delete(first);
+    }
+    return chosen;
+  }
   curatedJokes = [
     {
       text: "Why do programmers prefer dark mode? Because light attracts bugs da! \u{1F602} Semma logic la?",
@@ -25894,23 +26092,7 @@ var PersonalityEngine = class {
       return { text, emotion: "happy" };
     }
     if (/joke|comedy|sirippu|funny|laugh/i.test(lower)) {
-      if (isVadivelu) {
-        return {
-          text: "Building strong-u, basement romba weak-u! Adhuku thaan intha infinite loop exit condition-e illama suthithu da! \u{1F602}",
-          emotion: "laughing"
-        };
-      } else if (isSanthanam) {
-        return {
-          text: "Indha function-ah paatha enakke kizha vizhunthu sirikka thonuthu! Semma comedy panni vachiruka nanba! \u{1F602}",
-          emotion: "laughing"
-        };
-      } else if (isSmallBoy) {
-        return {
-          text: "Anna, light-ah paatha bugs varum la, adhunaala thaan dark mode use panreengala? Semma brain anna ungalukku! \u{1F602}",
-          emotion: "laughing"
-        };
-      }
-      return this.getRandomJoke();
+      return this.getSituationalJoke(gender, summary);
     }
     if (/how are you|eppadi irukka|nalama|fine/i.test(lower)) {
       let text = "Naan full energetic-ah irukken! Unga code-la zero bugs paatha innum jolly-ah iruppen! \u{1F604}";

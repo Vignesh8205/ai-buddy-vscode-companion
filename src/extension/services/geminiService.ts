@@ -321,6 +321,61 @@ CONVERSATION & PERSONALITY RULES:
     return this.generateReply(prompt, gender, modelName, summary);
   }
 
+  public async generateSituationalJoke(
+    summary: ProjectSummary | undefined,
+    gender: VoiceGender,
+    modelName = DEFAULT_GEMINI_MODEL
+  ): Promise<GeminiReply> {
+    const activeFile = summary?.activeFile?.name;
+    const activeLine = summary?.activeFile?.cursorLine;
+    const lang = summary?.activeFile?.languageId || summary?.primaryLanguage || 'Code';
+    const errors = summary?.diagnosticsSummary?.errorCount || 0;
+    const topError = summary?.diagnosticsSummary?.topErrors?.[0]?.message;
+    const frameworks = summary?.frameworks?.join(', ');
+
+    // Current hour for time-of-day comedy
+    const hour = new Date().getHours();
+    let timeMood = 'normal work hours';
+    if (hour >= 23 || hour < 5) timeMood = 'late night 2 AM sleepless coder zombie mode';
+    else if (hour >= 5 && hour < 9) timeMood = 'early morning sleepy coffee coding';
+    else if (hour >= 13 && hour <= 15) timeMood = 'post-lunch food coma sleepy coding';
+
+    // Varied comedy angles so every single joke is fresh & different
+    const comedyAngles = [
+      'roast the developer for writing code without comments or using "any" type',
+      'hilarious observation about the active file and framework being used',
+      'dramatic reaction to whether the code will crash or work on first run',
+      'witty joke about async await, infinite loops, or coffee consumption',
+      'teasing about git commit messages like "fix bug final final v2"',
+      'funny movie reference comparing coding to a dramatic scene',
+      'roasting console.log everywhere instead of using a debugger',
+      'joke about Stack Overflow, copy-pasting code, and praying it runs',
+    ];
+    const randomAngle = comedyAngles[Math.floor(Math.random() * comedyAngles.length)];
+
+    let situationDetails = `Active File: ${activeFile || 'none'}, Language: ${lang}, Line: ${activeLine || 'N/A'}, Time mood: ${timeMood}.`;
+    if (errors > 0 && topError) {
+      situationDetails += ` Current situation: Developer has ${errors} errors in their code right now! Top error: "${topError.slice(0, 80)}".`;
+    } else {
+      situationDetails += ` Current situation: No compiler errors, but developer wants a fresh situational laugh!`;
+    }
+    if (frameworks) {
+      situationDetails += ` Frameworks: ${frameworks}.`;
+    }
+
+    const prompt = `CRITICAL TASK: Generate a brand NEW, FRESH, SITUATION-BASED Tanglish comedy punchline / joke!
+SITUATION: ${situationDetails}
+COMEDY ANGLE FOR THIS JOKE: ${randomAngle}
+RULES:
+1. Make it SPECIFIC to the situation (referencing the active file, errors, language, or coding habits).
+2. MUST BE DIFFERENT from generic jokes. DO NOT use "Why do programmers prefer dark mode" or "tea shop async".
+3. Keep it punchy (1-2 sentences).
+4. MUST start with an emotion tag like [laughing] or [happy].
+5. Natural conversational Tanglish (Tamil + English coding terms).`;
+
+    return this.generateReply(prompt, gender, modelName, summary);
+  }
+
   public parseEmotionTag(rawText: string): { emotion: CharacterState; text: string } {
     const emotionMatch = rawText.match(
       /^\[(idle|listening|thinking|speaking|laughing|happy|confused|surprised|sad)\]\s*(.*)$/i
