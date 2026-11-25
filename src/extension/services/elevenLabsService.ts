@@ -160,4 +160,33 @@ export class ElevenLabsService {
     }
     return null;
   }
+
+  /**
+   * Checks whether the user has configured an explicit custom voice ID
+   * or has a custom cloned voice on their account for this persona.
+   */
+  public async isClonedVoiceAvailable(persona: VoiceGender): Promise<boolean> {
+    try {
+      const apiKey = await this.secretStorage.getElevenLabsApiKey();
+      if (!apiKey) return false;
+
+      const config = vscode.workspace.getConfiguration('aiBuddy');
+      const customVoiceId = config.get<string>(`elevenLabsVoice_${persona}`);
+      if (customVoiceId && customVoiceId.trim().length > 0) {
+        return true;
+      }
+
+      const accountVoices = await this.getAccountVoices(apiKey);
+      if (accountVoices) {
+        const targetName = persona.toLowerCase().replace(/_/g, '');
+        return accountVoices.some((v: any) => {
+          const vName = v.name.toLowerCase().replace(/[\s_-]/g, '');
+          return vName.includes(targetName) && v.category === 'cloned';
+        });
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }
 }

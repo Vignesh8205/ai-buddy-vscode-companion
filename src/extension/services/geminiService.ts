@@ -8,6 +8,7 @@ export interface GeminiReply {
   text: string;
   emotion: CharacterState;
   audioData?: string;
+  spokenTamil?: string;
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
@@ -54,7 +55,9 @@ COMEDY: Address developer as "Anna/Akka", innocent, playful cheerleading ("Anna 
 RULES:
 1. Speak in NATURAL TANGLISH (Tamil in English letters + dev terms).
 2. Max 1-2 punchy sentences (read aloud via voice). No markdown, bullet points, or code blocks.
-3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]. Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu!"`;
+3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking].
+4. At the end, you can optionally include <tamil>Spoken Tamil in native Tamil script</tamil> for natural voice audio.
+Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu! <tamil>ஹாprint('ஹா') செம்ம காமெடி டா! இந்த பக் பார்த்து டெர்மினலே பயந்துடுச்சு!</tamil>"`;
 
     if (contextPrompt) {
       prompt += `\n${contextPrompt}`;
@@ -263,7 +266,7 @@ RULES:
         const response = await chat.sendMessage(userText);
         const rawText = response.response.text()?.trim() || '';
 
-        const { emotion, text } = this.parseEmotionTag(rawText);
+        const { emotion, text, spokenTamil } = this.parseEmotionTag(rawText);
 
         // Add model turn to history
         this.conversationHistory.push({
@@ -271,7 +274,7 @@ RULES:
           parts: [{ text: rawText }],
         });
 
-        const audioData = await this.generateAudio(text, gender, apiKey);
+        const audioData = await this.generateAudio(spokenTamil || text, gender, apiKey);
 
         // Optimization 4: Cache response + audio in-memory
         if (this.responseCache.size >= GeminiService.MAX_RESPONSE_CACHE) {
@@ -280,7 +283,7 @@ RULES:
         }
         this.responseCache.set(cacheKey, { text, emotion, audioData, timestamp: Date.now() });
 
-        return { text, emotion, audioData };
+        return { text, emotion, audioData, spokenTamil };
       } catch (error: any) {
         lastError = error;
         console.warn(`[AI Buddy] Model ${activeModel} failed: ${error?.message || error}. Trying fallback...`);
@@ -380,25 +383,34 @@ RULES:
     return this.generateReply(prompt, gender, modelName, summary);
   }
 
-  public parseEmotionTag(rawText: string): { emotion: CharacterState; text: string } {
-    const emotionMatch = rawText.match(
+  public parseEmotionTag(rawText: string): { emotion: CharacterState; text: string; spokenTamil?: string } {
+    let spokenTamil: string | undefined;
+    let workingText = rawText;
+
+    const tamilMatch = workingText.match(/<tamil>([\s\S]*?)<\/tamil>/i);
+    if (tamilMatch) {
+      spokenTamil = tamilMatch[1].trim();
+      workingText = workingText.replace(/<tamil>[\s\S]*?<\/tamil>/gi, '').trim();
+    }
+
+    const emotionMatch = workingText.match(
       /^\[(idle|listening|thinking|speaking|laughing|happy|confused|surprised|sad)\]\s*(.*)$/i
     );
 
     let emotion: CharacterState = 'speaking';
-    let text = rawText;
+    let text = workingText;
 
     if (emotionMatch) {
       emotion = emotionMatch[1].toLowerCase() as CharacterState;
       text = emotionMatch[2].trim();
     } else {
-      if (/😂|haha|lol|comedy/i.test(rawText)) emotion = 'laughing';
-      else if (/super|mass|semma|party|congrats|wow|🔥|🎉/i.test(rawText)) emotion = 'happy';
-      else if (/aiyoo|error|fail|bug|problem|ayyo/i.test(rawText)) emotion = 'confused';
-      else if (/wait|check|think|paapom/i.test(rawText)) emotion = 'thinking';
+      if (/😂|haha|lol|comedy/i.test(workingText)) emotion = 'laughing';
+      else if (/super|mass|semma|party|congrats|wow|🔥|🎉/i.test(workingText)) emotion = 'happy';
+      else if (/aiyoo|error|fail|bug|problem|ayyo/i.test(workingText)) emotion = 'confused';
+      else if (/wait|check|think|paapom/i.test(workingText)) emotion = 'thinking';
     }
 
-    return { emotion, text };
+    return { emotion, text, spokenTamil };
   }
 
   public clearHistory(): void {

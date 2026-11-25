@@ -71,38 +71,43 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
   private async _getAudioForText(
     text: string,
     persona: VoiceGender,
-    skipGeminiTTS = false
+    skipGeminiTTS = false,
+    spokenTamil?: string
   ): Promise<string | undefined> {
-    // 1. Enterprise Priority: ElevenLabs Enterprise Human Voice (Studio quality, real human cadence & acting)
+    // 1. ElevenLabs Voice Cloning (Used ONLY if user configured a custom cloned voice on their account)
     if (this._elevenLabsService) {
       try {
-        const elevenAudio = await this._elevenLabsService.synthesize(text, persona);
-        if (elevenAudio) return elevenAudio;
+        const hasCloned = await this._elevenLabsService.isClonedVoiceAvailable(persona);
+        if (hasCloned) {
+          const elevenAudio = await this._elevenLabsService.synthesize(spokenTamil || text, persona);
+          if (elevenAudio) return elevenAudio;
+        }
       } catch (err) {
-        console.warn('[CharacterViewProvider] ElevenLabs enterprise audio error:', err);
+        console.warn('[CharacterViewProvider] ElevenLabs voice error:', err);
       }
     }
 
-    // 2. Secondary: Gemini Conversational Native Audio (Human-like tone, laughs, natural prosody)
+    // 2. High-Fidelity Indian Tamil Neural Voice (ta-IN-ValluvarNeural & ta-IN-PallaviNeural)
+    // 100% authentic Tamil diction, zero robotic pitch, zero API costs!
+    if (this._neuralVoiceService) {
+      try {
+        const neuralAudio = await this._neuralVoiceService.synthesize(text, persona, spokenTamil);
+        if (neuralAudio) return neuralAudio;
+      } catch (err) {
+        console.warn('[CharacterViewProvider] Neural voice synthesis error:', err);
+      }
+    }
+
+    // 3. Fallback: Gemini Conversational Native Audio
     if (!skipGeminiTTS) {
       try {
         const apiKey = await this._secretStorage.getApiKey();
         if (apiKey && this._geminiService) {
-          const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
+          const geminiAudio = await this._geminiService.generateAudio(spokenTamil || text, persona, apiKey);
           if (geminiAudio) return geminiAudio;
         }
       } catch (err) {
         console.warn('[CharacterViewProvider] Gemini native audio error:', err);
-      }
-    }
-
-    // 3. Tertiary Fallback: Refined Free Neural Voice (Zero pitch distortion, 0 API tokens)
-    if (this._neuralVoiceService) {
-      try {
-        const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
-        if (neuralAudio) return neuralAudio;
-      } catch (err) {
-        console.warn('[CharacterViewProvider] Neural voice synthesis error:', err);
       }
     }
 
@@ -151,7 +156,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         );
 
         // Optimization: if reply.audioData was already attempted and missing, skip Gemini TTS to prevent duplicate API requests
-        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true));
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil));
         this.postMessage({
           type: 'characterReply',
           text: reply.text,
@@ -171,7 +176,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           summary = await this._contextEngine.analyzeWorkspace();
         }
 
-        let jokeReply: { text: string; emotion: CharacterState; audioData?: string };
+        let jokeReply: { text: string; emotion: CharacterState; audioData?: string; spokenTamil?: string };
         const hasKey = await this._secretStorage.hasApiKey();
         if (hasKey) {
           jokeReply = await this._geminiService.generateSituationalJoke(summary, voiceGender, modelName);
@@ -181,7 +186,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         // Optimization: avoid duplicate Gemini TTS call if already attempted
-        const audioData = jokeReply.audioData || (await this._getAudioForText(jokeReply.text, voiceGender, true));
+        const audioData = jokeReply.audioData || (await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil));
         this.postMessage({
           type: 'characterReply',
           text: jokeReply.text,
@@ -209,7 +214,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true));
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil));
 
         this.postMessage({
           type: 'characterReply',
@@ -231,7 +236,7 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         }
 
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true));
+        const audioData = reply.audioData || (await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil));
 
         this.postMessage({
           type: 'characterReply',

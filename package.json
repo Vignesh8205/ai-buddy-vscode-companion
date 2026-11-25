@@ -136,7 +136,7 @@
     "build": "node build.js",
     "watch": "node build.js --watch",
     "compile": "tsc -p ./ --noEmit",
-    "test": "node --test test/phase1.test.mjs test/phase2.test.mjs test/phase3.test.mjs",
+    "test": "node --test test/phase1.test.mjs test/phase2.test.mjs test/phase3.test.mjs test/phase4.test.mjs",
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "dependencies": {

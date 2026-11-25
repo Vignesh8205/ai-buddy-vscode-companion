@@ -23992,32 +23992,35 @@ var CharacterViewProvider = class {
     }
     return this._audioClipsService.getRandomClipDataUri(persona);
   }
-  async _getAudioForText(text, persona, skipGeminiTTS = false) {
+  async _getAudioForText(text, persona, skipGeminiTTS = false, spokenTamil) {
     if (this._elevenLabsService) {
       try {
-        const elevenAudio = await this._elevenLabsService.synthesize(text, persona);
-        if (elevenAudio) return elevenAudio;
+        const hasCloned = await this._elevenLabsService.isClonedVoiceAvailable(persona);
+        if (hasCloned) {
+          const elevenAudio = await this._elevenLabsService.synthesize(spokenTamil || text, persona);
+          if (elevenAudio) return elevenAudio;
+        }
       } catch (err) {
-        console.warn("[CharacterViewProvider] ElevenLabs enterprise audio error:", err);
+        console.warn("[CharacterViewProvider] ElevenLabs voice error:", err);
+      }
+    }
+    if (this._neuralVoiceService) {
+      try {
+        const neuralAudio = await this._neuralVoiceService.synthesize(text, persona, spokenTamil);
+        if (neuralAudio) return neuralAudio;
+      } catch (err) {
+        console.warn("[CharacterViewProvider] Neural voice synthesis error:", err);
       }
     }
     if (!skipGeminiTTS) {
       try {
         const apiKey = await this._secretStorage.getApiKey();
         if (apiKey && this._geminiService) {
-          const geminiAudio = await this._geminiService.generateAudio(text, persona, apiKey);
+          const geminiAudio = await this._geminiService.generateAudio(spokenTamil || text, persona, apiKey);
           if (geminiAudio) return geminiAudio;
         }
       } catch (err) {
         console.warn("[CharacterViewProvider] Gemini native audio error:", err);
-      }
-    }
-    if (this._neuralVoiceService) {
-      try {
-        const neuralAudio = await this._neuralVoiceService.synthesize(text, persona);
-        if (neuralAudio) return neuralAudio;
-      } catch (err) {
-        console.warn("[CharacterViewProvider] Neural voice synthesis error:", err);
       }
     }
     return this._getAudioClipForPersona(persona);
@@ -24056,7 +24059,7 @@ var CharacterViewProvider = class {
           modelName,
           summary
         );
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -24081,7 +24084,7 @@ var CharacterViewProvider = class {
           const fallback = this._personalityEngine.getSituationalJoke(voiceGender, summary);
           jokeReply = { text: fallback.text, emotion: fallback.emotion };
         }
-        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender, true);
+        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil);
         this.postMessage({
           type: "characterReply",
           text: jokeReply.text,
@@ -24105,7 +24108,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.explainCurrentError(summary, voiceGender, modelName);
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -24123,7 +24126,7 @@ var CharacterViewProvider = class {
           summary = await this._contextEngine.analyzeWorkspace();
         }
         const reply = await this._geminiService.analyzeCurrentProject(summary, voiceGender, modelName);
-        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true);
+        const audioData = reply.audioData || await this._getAudioForText(reply.text, voiceGender, true, reply.spokenTamil);
         this.postMessage({
           type: "characterReply",
           text: reply.text,
@@ -25280,7 +25283,9 @@ COMEDY: Address developer as "Anna/Akka", innocent, playful cheerleading ("Anna 
 RULES:
 1. Speak in NATURAL TANGLISH (Tamil in English letters + dev terms).
 2. Max 1-2 punchy sentences (read aloud via voice). No markdown, bullet points, or code blocks.
-3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking]. Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu!"`;
+3. Start with an emotion tag: [idle], [speaking], [laughing], [happy], [confused], [surprised], [sad], [thinking].
+4. At the end, you can optionally include <tamil>Spoken Tamil in native Tamil script</tamil> for natural voice audio.
+Example: "[laughing] Haha semma comedy da! Intha bug paathu terminal-e bayanthuduchu! <tamil>\u0BB9\u0BBEprint('\u0BB9\u0BBE') \u0B9A\u0BC6\u0BAE\u0BCD\u0BAE \u0B95\u0BBE\u0BAE\u0BC6\u0B9F\u0BBF \u0B9F\u0BBE! \u0B87\u0BA8\u0BCD\u0BA4 \u0BAA\u0B95\u0BCD \u0BAA\u0BBE\u0BB0\u0BCD\u0BA4\u0BCD\u0BA4\u0BC1 \u0B9F\u0BC6\u0BB0\u0BCD\u0BAE\u0BBF\u0BA9\u0BB2\u0BC7 \u0BAA\u0BAF\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BC1\u0B9A\u0BCD\u0B9A\u0BC1!</tamil>"`;
     if (contextPrompt) {
       prompt += `
 ${contextPrompt}`;
@@ -25435,18 +25440,18 @@ ${contextPrompt}`;
         });
         const response = await chat.sendMessage(userText);
         const rawText = response.response.text()?.trim() || "";
-        const { emotion, text } = this.parseEmotionTag(rawText);
+        const { emotion, text, spokenTamil } = this.parseEmotionTag(rawText);
         this.conversationHistory.push({
           role: "model",
           parts: [{ text: rawText }]
         });
-        const audioData = await this.generateAudio(text, gender, apiKey);
+        const audioData = await this.generateAudio(spokenTamil || text, gender, apiKey);
         if (this.responseCache.size >= _GeminiService.MAX_RESPONSE_CACHE) {
           const oldestKey = this.responseCache.keys().next().value;
           if (oldestKey) this.responseCache.delete(oldestKey);
         }
         this.responseCache.set(cacheKey, { text, emotion, audioData, timestamp: Date.now() });
-        return { text, emotion, audioData };
+        return { text, emotion, audioData, spokenTamil };
       } catch (error) {
         lastError = error;
         console.warn(`[AI Buddy] Model ${activeModel} failed: ${error?.message || error}. Trying fallback...`);
@@ -25521,21 +25526,28 @@ RULES:
     return this.generateReply(prompt, gender, modelName, summary);
   }
   parseEmotionTag(rawText) {
-    const emotionMatch = rawText.match(
+    let spokenTamil;
+    let workingText = rawText;
+    const tamilMatch = workingText.match(/<tamil>([\s\S]*?)<\/tamil>/i);
+    if (tamilMatch) {
+      spokenTamil = tamilMatch[1].trim();
+      workingText = workingText.replace(/<tamil>[\s\S]*?<\/tamil>/gi, "").trim();
+    }
+    const emotionMatch = workingText.match(
       /^\[(idle|listening|thinking|speaking|laughing|happy|confused|surprised|sad)\]\s*(.*)$/i
     );
     let emotion = "speaking";
-    let text = rawText;
+    let text = workingText;
     if (emotionMatch) {
       emotion = emotionMatch[1].toLowerCase();
       text = emotionMatch[2].trim();
     } else {
-      if (/😂|haha|lol|comedy/i.test(rawText)) emotion = "laughing";
-      else if (/super|mass|semma|party|congrats|wow|🔥|🎉/i.test(rawText)) emotion = "happy";
-      else if (/aiyoo|error|fail|bug|problem|ayyo/i.test(rawText)) emotion = "confused";
-      else if (/wait|check|think|paapom/i.test(rawText)) emotion = "thinking";
+      if (/😂|haha|lol|comedy/i.test(workingText)) emotion = "laughing";
+      else if (/super|mass|semma|party|congrats|wow|🔥|🎉/i.test(workingText)) emotion = "happy";
+      else if (/aiyoo|error|fail|bug|problem|ayyo/i.test(workingText)) emotion = "confused";
+      else if (/wait|check|think|paapom/i.test(workingText)) emotion = "thinking";
     }
-    return { emotion, text };
+    return { emotion, text, spokenTamil };
   }
   clearHistory() {
     this.conversationHistory = [];
@@ -26506,18 +26518,193 @@ var AudioClipsService = class {
 
 // src/extension/services/neuralVoiceService.ts
 var import_msedge_tts = __toESM(require_dist2());
+
+// src/extension/services/tamilTransliterator.ts
+var TamilTransliterator = class _TamilTransliterator {
+  static PHRASE_MAP = [
+    // Iconic Vadivelu Punchlines & Comedy Expressions
+    [/\bbuilding strong[- ]?u\b/gi, "\u0BAA\u0BBF\u0BB2\u0BCD\u0B9F\u0BBF\u0B99\u0BCD \u0BB8\u0BCD\u0B9F\u0BCD\u0BB0\u0BBE\u0B99\u0BCD\u0B95\u0BC1"],
+    [/\bbasement (?:romba )?weak[- ]?u\b/gi, "\u0BAA\u0BC7\u0BB8\u0BCD\u0BAE\u0BC6\u0BA3\u0BCD\u0B9F\u0BCD \u0BB5\u0BC0\u0B95\u0BCD\u0B95\u0BC1"],
+    [/\brisk edukuradhellam\b/gi, "\u0BB0\u0BBF\u0BB8\u0BCD\u0B95\u0BCD \u0B8E\u0B9F\u0BC1\u0B95\u0BCD\u0B95\u0BC1\u0BB1\u0BA4\u0BC6\u0BB2\u0BCD\u0BB2\u0BBE\u0BAE\u0BCD"],
+    [/\brusk saapdra madhiri\b/gi, "\u0BB0\u0BB8\u0BCD\u0B95\u0BCD \u0B9A\u0BBE\u0BAA\u0BCD\u0BAA\u0BBF\u0B9F\u0BC1\u0BB1 \u0BAE\u0BBE\u0BA4\u0BBF\u0BB0\u0BBF"],
+    [/\bsanda na satta kizhiyathaan seiyum\b/gi, "\u0B9A\u0BA3\u0BCD\u0B9F\u0BC8\u0BA9\u0BBE \u0B9A\u0B9F\u0BCD\u0B9F\u0BC8 \u0B95\u0BBF\u0BB4\u0BBF\u0BAF\u0BA4\u0BCD\u0BA4\u0BBE\u0BA9\u0BCD \u0B9A\u0BC6\u0BAF\u0BCD\u0BAF\u0BC1\u0BAE\u0BCD"],
+    [/\bvandhutan da vandhutan da\b/gi, "\u0BB5\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BCD\u0B9F\u0BC7\u0BA9\u0BCD\u0B9F\u0BBE \u0BB5\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BCD\u0B9F\u0BC7\u0BA9\u0BCD\u0B9F\u0BBE"],
+    [/\bvandhutan da\b/gi, "\u0BB5\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BCD\u0B9F\u0BC7\u0BA9\u0BCD\u0B9F\u0BBE"],
+    [/\bvandhuten da\b/gi, "\u0BB5\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BCD\u0B9F\u0BC7\u0BA9\u0BCD\u0B9F\u0BBE"],
+    [/\bnaan thaan unga vadivelu\b/gi, "\u0BA8\u0BBE\u0BA9\u0BCD \u0BA4\u0BBE\u0BA9\u0BCD \u0B89\u0B99\u0BCD\u0B95 \u0BB5\u0B9F\u0BBF\u0BB5\u0BC7\u0BB2\u0BC1"],
+    [/\bnaan thaan unga santhanam\b/gi, "\u0BA8\u0BBE\u0BA9\u0BCD \u0BA4\u0BBE\u0BA9\u0BCD \u0B89\u0B99\u0BCD\u0B95 \u0B9A\u0BA8\u0BCD\u0BA4\u0BBE\u0BA9\u0BAE\u0BCD"],
+    [/\bnaan thaan unga\b/gi, "\u0BA8\u0BBE\u0BA9\u0BCD \u0BA4\u0BBE\u0BA9\u0BCD \u0B89\u0B99\u0BCD\u0B95"],
+    [/\btherikka viduvom\b/gi, "\u0BA4\u0BC6\u0BB1\u0BBF\u0B95\u0BCD\u0B95 \u0BB5\u0BBF\u0B9F\u0BC1\u0BB5\u0BCB\u0BAE\u0BCD"],
+    [/\bterminal[- ]?ah\b/gi, "\u0B9F\u0BC6\u0BB0\u0BCD\u0BAE\u0BBF\u0BA9\u0BB2\u0BC8"],
+    [/\bkizha vizhunthu sirikka\b/gi, "\u0B95\u0BC0\u0BB4 \u0BB5\u0BBF\u0BB4\u0BC1\u0BA8\u0BCD\u0BA4\u0BC1 \u0B9A\u0BBF\u0BB0\u0BBF\u0B95\u0BCD\u0B95"],
+    [/\bjolly[- ]?ah\b/gi, "\u0B9C\u0BBE\u0BB2\u0BBF\u0BAF\u0BBE"],
+    [/\bfresh[- ]?ah\b/gi, "\u0BAA\u0BBF\u0BB0\u0BC6\u0BB7\u0BCD\u0BB7\u0BBE"],
+    [/\bclean[- ]?ah\b/gi, "\u0B95\u0BBF\u0BB3\u0BC0\u0BA9\u0BBE"],
+    [/\bmass[- ]?ah\b/gi, "\u0BAE\u0BBE\u0BB8\u0BBE"],
+    [/\bfree[- ]?ah\b/gi, "\u0B83\u0BAA\u0BCD\u0BB0\u0BC0\u0BAF\u0BBE"],
+    [/\bsimple[- ]?ah\b/gi, "\u0B9A\u0BBF\u0BAE\u0BCD\u0BAA\u0BBF\u0BB3\u0BBE"],
+    [/\bquick[- ]?ah\b/gi, "\u0B95\u0BC1\u0BAF\u0BBF\u0B95\u0BCD\u0B95\u0BBE"],
+    // Persona Greetings
+    [/\bheyyy\b/gi, "\u0BB9\u0BC7\u0BAF\u0BCD"],
+    [/\bhey\b/gi, "\u0BB9\u0BC7\u0BAF\u0BCD"],
+    [/\baahaa\b/gi, "\u0B86\u0BB9\u0BBE"],
+    [/\baaha\b/gi, "\u0B86\u0BB9\u0BBE"],
+    [/\baiyoo kadavule\b/gi, "\u0B90\u0BAF\u0BCB \u0B95\u0B9F\u0BB5\u0BC1\u0BB3\u0BC7"],
+    [/\baiyoo\b/gi, "\u0B90\u0BAF\u0BCB"],
+    [/\bayyo\b/gi, "\u0B90\u0BAF\u0BCB"],
+    [/\bkadavule\b/gi, "\u0B95\u0B9F\u0BB5\u0BC1\u0BB3\u0BC7"],
+    [/\bnanba\b/gi, "\u0BA8\u0BA3\u0BCD\u0BAA\u0BBE"],
+    [/\bthalaivaa\b/gi, "\u0BA4\u0BB2\u0BC8\u0BB5\u0BBE"],
+    [/\bthalaiva\b/gi, "\u0BA4\u0BB2\u0BC8\u0BB5\u0BBE"],
+    [/\banna anna\b/gi, "\u0B85\u0BA3\u0BCD\u0BA3\u0BBE \u0B85\u0BA3\u0BCD\u0BA3\u0BBE"],
+    [/\banna\b/gi, "\u0B85\u0BA3\u0BCD\u0BA3\u0BBE"],
+    [/\bchotu\b/gi, "\u0B9A\u0BCB\u0B9F\u0BCD\u0B9F\u0BC1"],
+    [/\bmaya\b/gi, "\u0BAE\u0BBE\u0BAF\u0BBE"],
+    [/\bvadivelu\b/gi, "\u0BB5\u0B9F\u0BBF\u0BB5\u0BC7\u0BB2\u0BC1"],
+    [/\bsanthanam\b/gi, "\u0B9A\u0BA8\u0BCD\u0BA4\u0BBE\u0BA9\u0BAE\u0BCD"],
+    // Tech Terms (phonetically spelled in Tamil for natural TTS reading)
+    [/\bcompiler[- ]?e\b/gi, "\u0B95\u0BAE\u0BCD\u0BAA\u0BC8\u0BB2\u0BB0\u0BC7"],
+    [/\bcompiler\b/gi, "\u0B95\u0BAE\u0BCD\u0BAA\u0BC8\u0BB2\u0BB0\u0BCD"],
+    [/\bterminal\b/gi, "\u0B9F\u0BC6\u0BB0\u0BCD\u0BAE\u0BBF\u0BA9\u0BB2\u0BCD"],
+    [/\bcoding\b/gi, "\u0B95\u0BCB\u0B9F\u0BBF\u0B99\u0BCD"],
+    [/\bcode\b/gi, "\u0B95\u0BCB\u0B9F\u0BCD"],
+    [/\berror[- ]?ah\b/gi, "\u0B8E\u0BB0\u0BCD\u0BB0\u0BB0"],
+    [/\berror\b/gi, "\u0B8E\u0BB0\u0BCD\u0BB0\u0BB0\u0BCD"],
+    [/\berrors\b/gi, "\u0B8E\u0BB0\u0BCD\u0BB0\u0BB0\u0BCD\u0BB8\u0BCD"],
+    [/\bbug[- ]?ah\b/gi, "\u0BAA\u0B95\u0BCD\u0B95"],
+    [/\bbug\b/gi, "\u0BAA\u0B95\u0BCD"],
+    [/\bbugs\b/gi, "\u0BAA\u0B95\u0BCD\u0BB8\u0BCD"],
+    [/\bfile[- ]?la\b/gi, "\u0B83\u0BAA\u0BC8\u0BB2\u0BCD\u0BB2"],
+    [/\bfile\b/gi, "\u0B83\u0BAA\u0BC8\u0BB2\u0BCD"],
+    [/\bproject\b/gi, "\u0BAA\u0BCD\u0BB0\u0BBE\u0B9C\u0BC6\u0B95\u0BCD\u0B9F\u0BCD"],
+    [/\bfunction\b/gi, "\u0B83\u0BAA\u0B99\u0BCD\u0BB7\u0BA9\u0BCD"],
+    [/\bcomponent\b/gi, "\u0B95\u0BBE\u0BAE\u0BCD\u0BAA\u0BCA\u0BA9\u0BA9\u0BCD\u0B9F\u0BCD"],
+    [/\bkeyboard\b/gi, "\u0B95\u0BC0\u0BAA\u0BCB\u0BB0\u0BCD\u0B9F\u0BC1"],
+    [/\bbutton\b/gi, "\u0BAA\u0B9F\u0BCD\u0B9F\u0BA9\u0BCD"],
+    [/\blaptop\b/gi, "\u0BB2\u0BC7\u0BAA\u0BCD\u0B9F\u0BBE\u0BAA\u0BCD"],
+    [/\bvariable\b/gi, "\u0BB5\u0BC7\u0BB0\u0BBF\u0BAF\u0BAA\u0BBF\u0BB3\u0BCD"],
+    [/\bconsole\.log\b/gi, "\u0B95\u0BA9\u0BCD\u0B9A\u0BCB\u0BB2\u0BCD \u0BB2\u0BBE\u0B95\u0BCD"],
+    [/\bdebugger\b/gi, "\u0B9F\u0BBF\u0BAA\u0B95\u0BCD\u0B95\u0BB0\u0BCD"],
+    [/\bdebug\b/gi, "\u0B9F\u0BBF\u0BAA\u0B95\u0BCD"],
+    [/\bcommit\b/gi, "\u0B95\u0BAE\u0BBF\u0B9F\u0BCD"],
+    [/\bbranch\b/gi, "\u0BAA\u0BBF\u0BB0\u0BBE\u0B9E\u0BCD\u0B9A\u0BCD"],
+    [/\bloop\b/gi, "\u0BB2\u0BC2\u0BAA\u0BCD"],
+    [/\bstack overflow\b/gi, "\u0BB8\u0BCD\u0B9F\u0BBE\u0B95\u0BCD \u0B93\u0BB5\u0BB0\u0BCD\u0B83\u0BAA\u0BC1\u0BB3\u0BCB"],
+    [/\bcoffee\b/gi, "\u0B95\u0BBE\u0BAA\u0BBF"],
+    // Conversational Tanglish Words
+    [/\binnaiku\b/gi, "\u0B87\u0BA9\u0BCD\u0BA9\u0BC8\u0B95\u0BCD\u0B95\u0BC1"],
+    [/\bindha\b/gi, "\u0B87\u0BA8\u0BCD\u0BA4"],
+    [/\bantha\b/gi, "\u0B85\u0BA8\u0BCD\u0BA4"],
+    [/\benna\b/gi, "\u0B8E\u0BA9\u0BCD\u0BA9"],
+    [/\bedhu\b/gi, "\u0B8E\u0BA4\u0BC1"],
+    [/\benga\b/gi, "\u0B8E\u0B99\u0BCD\u0B95"],
+    [/\beppo\b/gi, "\u0B8E\u0BAA\u0BCD\u0BAA\u0BCB"],
+    [/\beppadi\b/gi, "\u0B8E\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF"],
+    [/\bnaan\b/gi, "\u0BA8\u0BBE\u0BA9\u0BCD"],
+    [/\bneenga\b/gi, "\u0BA8\u0BC0\u0B99\u0BCD\u0B95"],
+    [/\bnee\b/gi, "\u0BA8\u0BC0"],
+    [/\bunga\b/gi, "\u0B89\u0B99\u0BCD\u0B95"],
+    [/\bun\b/gi, "\u0B89\u0BA9\u0BCD"],
+    [/\benakku\b/gi, "\u0B8E\u0BA9\u0B95\u0BCD\u0B95\u0BC1"],
+    [/\bunakku\b/gi, "\u0B89\u0BA9\u0B95\u0BCD\u0B95\u0BC1"],
+    [/\bavan\b/gi, "\u0B85\u0BB5\u0BA9\u0BCD"],
+    [/\bava\b/gi, "\u0B85\u0BB5"],
+    [/\bavanga\b/gi, "\u0B85\u0BB5\u0B99\u0BCD\u0B95"],
+    [/\bidhu\b/gi, "\u0B87\u0BA4\u0BC1"],
+    [/\badhu\b/gi, "\u0B85\u0BA4\u0BC1"],
+    [/\bsemma\b/gi, "\u0B9A\u0BC6\u0BAE\u0BCD\u0BAE"],
+    [/\bsuper\b/gi, "\u0B9A\u0BC2\u0BAA\u0BCD\u0BAA\u0BB0\u0BCD"],
+    [/\bmass\b/gi, "\u0BAE\u0BBE\u0BB8\u0BCD"],
+    [/\bprachanai\b/gi, "\u0BAA\u0BBF\u0BB0\u0B9A\u0BCD\u0B9A\u0BA9\u0BC8"],
+    [/\bproblem\b/gi, "\u0BAA\u0BBF\u0BB0\u0BBE\u0BAA\u0BCD\u0BB3\u0BAE\u0BCD"],
+    [/\bsolunga\b/gi, "\u0B9A\u0BCA\u0BB2\u0BCD\u0BB2\u0BC1\u0B99\u0BCD\u0B95"],
+    [/\bsollu\b/gi, "\u0B9A\u0BCA\u0BB2\u0BCD\u0BB2\u0BC1"],
+    [/\bpaapom\b/gi, "\u0BAA\u0BBE\u0BB0\u0BCD\u0BAA\u0BCD\u0BAA\u0BCB\u0BAE\u0BCD"],
+    [/\bpaatha\b/gi, "\u0BAA\u0BBE\u0BB0\u0BCD\u0BA4\u0BCD\u0BA4\u0BBE"],
+    [/\bpaarthu\b/gi, "\u0BAA\u0BBE\u0BB0\u0BCD\u0BA4\u0BCD\u0BA4\u0BC1"],
+    [/\bpaaru\b/gi, "\u0BAA\u0BBE\u0BB0\u0BC1"],
+    [/\birukku\b/gi, "\u0B87\u0BB0\u0BC1\u0B95\u0BCD\u0B95\u0BC1"],
+    [/\birukka\b/gi, "\u0B87\u0BB0\u0BC1\u0B95\u0BCD\u0B95\u0BBE"],
+    [/\birukken\b/gi, "\u0B87\u0BB0\u0BC1\u0B95\u0BCD\u0B95\u0BC7\u0BA9\u0BCD"],
+    [/\bpanra\b/gi, "\u0BAA\u0BA3\u0BCD\u0BB1"],
+    [/\bpanriya\b/gi, "\u0BAA\u0BA3\u0BCD\u0BB1\u0BBF\u0BAF\u0BBE"],
+    [/\bpannu\b/gi, "\u0BAA\u0BA3\u0BCD\u0BA3\u0BC1"],
+    [/\bpannuvom\b/gi, "\u0BAA\u0BA3\u0BCD\u0BA3\u0BC1\u0BB5\u0BCB\u0BAE\u0BCD"],
+    [/\bpannuvoma\b/gi, "\u0BAA\u0BA3\u0BCD\u0BA3\u0BC1\u0BB5\u0BCB\u0BAE\u0BBE"],
+    [/\bpottu\b/gi, "\u0BAA\u0BCB\u0B9F\u0BCD\u0B9F\u0BC1"],
+    [/\bpodu\b/gi, "\u0BAA\u0BCB\u0B9F\u0BC1"],
+    [/\bpodriya\b/gi, "\u0BAA\u0BCB\u0B9F\u0BC1\u0BB1\u0BBF\u0BAF\u0BBE"],
+    [/\bromba\b/gi, "\u0BB0\u0BCA\u0BAE\u0BCD\u0BAA"],
+    [/\bkizha\b/gi, "\u0B95\u0BC0\u0BB4"],
+    [/\bsirikka\b/gi, "\u0B9A\u0BBF\u0BB0\u0BBF\u0B95\u0BCD\u0B95"],
+    [/\bthonudhu\b/gi, "\u0BA4\u0BCB\u0BA3\u0BC1\u0BA4\u0BC1"],
+    [/\bthookam\b/gi, "\u0BA4\u0BC2\u0B95\u0BCD\u0B95\u0BAE\u0BCD"],
+    [/\bkudichitu\b/gi, "\u0B95\u0BC1\u0B9F\u0BBF\u0B9A\u0BCD\u0B9A\u0BBF\u0B9F\u0BCD\u0B9F\u0BC1"],
+    [/\bvaruva\b/gi, "\u0BB5\u0BB0\u0BC1\u0BB5"],
+    [/\bvarava\b/gi, "\u0BB5\u0BB0\u0BB5\u0BBE"],
+    [/\bvaa\b/gi, "\u0BB5\u0BBE"],
+    [/\bvanga\b/gi, "\u0BB5\u0BBE\u0B99\u0BCD\u0B95"],
+    [/\bpoidum\b/gi, "\u0BAA\u0BCB\u0BAF\u0BBF\u0B9F\u0BC1\u0BAE\u0BCD"],
+    [/\bvarudhu\b/gi, "\u0BB5\u0BB0\u0BC1\u0BA4\u0BC1"],
+    [/\bvanthuruchu\b/gi, "\u0BB5\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BC1\u0B9A\u0BCD\u0B9A\u0BC1"],
+    [/\baagiduchu\b/gi, "\u0B86\u0B95\u0BBF\u0B9F\u0BC1\u0B9A\u0BCD\u0B9A\u0BC1"],
+    [/\baagala\b/gi, "\u0B86\u0B95\u0BB2"],
+    [/\baachu\b/gi, "\u0B86\u0B9A\u0BCD\u0B9A\u0BC1"],
+    [/\bazhudhidum\b/gi, "\u0B85\u0BB4\u0BC1\u0BA4\u0BC1\u0B9F\u0BC1\u0BAE\u0BCD"],
+    [/\bpola\b/gi, "\u0BAA\u0BCB\u0BB2"],
+    [/\billa\b/gi, "\u0B87\u0BB2\u0BCD\u0BB2"],
+    [/\billai\b/gi, "\u0B87\u0BB2\u0BCD\u0BB2\u0BC8"],
+    [/\baama\b/gi, "\u0B86\u0BAE\u0BBE"],
+    [/\baana\b/gi, "\u0B86\u0BA9\u0BBE"],
+    [/\bmattum\b/gi, "\u0BAE\u0B9F\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD"],
+    [/\bkooda\b/gi, "\u0B95\u0BC2\u0B9F"],
+    [/\bapdi\b/gi, "\u0B85\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF"],
+    [/\bipdi\b/gi, "\u0B87\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF"],
+    [/\bepdi\b/gi, "\u0B8E\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF"],
+    [/\bkonjam\b/gi, "\u0B95\u0BCA\u0B9E\u0BCD\u0B9A\u0BAE\u0BCD"],
+    [/\btheriyuma\b/gi, "\u0BA4\u0BC6\u0BB0\u0BBF\u0BAF\u0BC1\u0BAE\u0BBE"],
+    [/\btheriyum\b/gi, "\u0BA4\u0BC6\u0BB0\u0BBF\u0BAF\u0BC1\u0BAE\u0BCD"],
+    [/\btheriyala\b/gi, "\u0BA4\u0BC6\u0BB0\u0BBF\u0BAF\u0BB2"],
+    [/\bbayanthutiya\b/gi, "\u0BAA\u0BAF\u0BA8\u0BCD\u0BA4\u0BC1\u0B9F\u0BCD\u0B9F\u0BBF\u0BAF\u0BBE"],
+    [/\bbayam\b/gi, "\u0BAA\u0BAF\u0BAE\u0BCD"],
+    [/\bda\b/gi, "\u0B9F\u0BBE"],
+    [/\bdi\b/gi, "\u0B9F\u0BBF"],
+    [/\bpa\b/gi, "\u0BAA\u0BCD\u0BAA\u0BBE"],
+    [/\bmachan\b/gi, "\u0BAE\u0B9A\u0BCD\u0B9A\u0BBE\u0BA9\u0BCD"],
+    [/\bbro\b/gi, "\u0BAA\u0BCD\u0BB0\u0BCB"]
+  ];
+  /**
+   * Transliterates Tanglish text to Tamil Unicode script.
+   * If the text already has Tamil Unicode characters, it returns it directly.
+   */
+  static toTamil(text) {
+    if (!text || !text.trim()) return "";
+    const tamilChars = text.match(/[\u0B80-\u0BFF]/g);
+    if (tamilChars && tamilChars.length >= 5) {
+      return text;
+    }
+    let result = text;
+    for (const [pattern, tamil] of _TamilTransliterator.PHRASE_MAP) {
+      result = result.replace(pattern, tamil);
+    }
+    return result;
+  }
+};
+
+// src/extension/services/neuralVoiceService.ts
 var NeuralVoiceService = class _NeuralVoiceService {
   static CACHE_LIMIT = 200;
   audioCache = /* @__PURE__ */ new Map();
   /**
-   * Synthesize dynamic text into natural, non-distorted speech (zero robotic pitch shift).
+   * Synthesize dynamic text into natural, non-distorted speech with authentic Tamil phonetics.
    * Data URI: data:audio/mp3;base64,...
    */
-  async synthesize(text, persona) {
+  async synthesize(text, persona, spokenTamil) {
     try {
       if (!text || !text.trim()) return void 0;
-      let cleanText = text.replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/[#*`_~]/g, "").replace(/\s+/g, " ").trim();
+      let cleanText = (spokenTamil || text).replace(/```[\s\S]*?```/g, "").replace(/https?:\/\/\S+/g, "").replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/[#*`_~]/g, "").replace(/\s+/g, " ").trim();
       if (!cleanText) return void 0;
+      cleanText = TamilTransliterator.toTamil(cleanText);
       if (cleanText.length > 350) {
         const lastPunctuation = cleanText.slice(0, 350).lastIndexOf(".");
         if (lastPunctuation > 100) {
@@ -26534,12 +26721,18 @@ var NeuralVoiceService = class _NeuralVoiceService {
         try {
           const tts = new import_msedge_tts.MsEdgeTTS();
           const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
-          let voice = "en-IN-PrabhatNeural";
-          let options = { pitch: "+0Hz", rate: "+0%" };
+          let voice = "ta-IN-ValluvarNeural";
+          let options = { pitch: "+0Hz", rate: "+4%" };
           if (hasTamilScript) {
-            if (persona === "maya" || persona === "female" || persona === "small_boy") {
+            if (persona === "maya" || persona === "female") {
               voice = "ta-IN-PallaviNeural";
-              options = { pitch: "+0Hz", rate: "+4%" };
+              options = { pitch: "+0Hz", rate: "+2%" };
+            } else if (persona === "small_boy") {
+              voice = "ta-IN-PallaviNeural";
+              options = { pitch: "+2Hz", rate: "+6%" };
+            } else if (persona === "santhanam") {
+              voice = "ta-IN-ValluvarNeural";
+              options = { pitch: "+0Hz", rate: "+8%" };
             } else {
               voice = "ta-IN-ValluvarNeural";
               options = { pitch: "+0Hz", rate: "+4%" };
@@ -26747,6 +26940,31 @@ var ElevenLabsService = class _ElevenLabsService {
     } catch (e) {
     }
     return null;
+  }
+  /**
+   * Checks whether the user has configured an explicit custom voice ID
+   * or has a custom cloned voice on their account for this persona.
+   */
+  async isClonedVoiceAvailable(persona) {
+    try {
+      const apiKey = await this.secretStorage.getElevenLabsApiKey();
+      if (!apiKey) return false;
+      const config = vscode6.workspace.getConfiguration("aiBuddy");
+      const customVoiceId = config.get(`elevenLabsVoice_${persona}`);
+      if (customVoiceId && customVoiceId.trim().length > 0) {
+        return true;
+      }
+      const accountVoices = await this.getAccountVoices(apiKey);
+      if (accountVoices) {
+        const targetName = persona.toLowerCase().replace(/_/g, "");
+        return accountVoices.some((v) => {
+          const vName = v.name.toLowerCase().replace(/[\s_-]/g, "");
+          return vName.includes(targetName) && v.category === "cloned";
+        });
+      }
+    } catch {
+    }
+    return false;
   }
 };
 

@@ -1,20 +1,25 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { VoiceGender } from '../../shared/types';
+import { TamilTransliterator } from './tamilTransliterator';
 
 export class NeuralVoiceService {
   private static readonly CACHE_LIMIT = 200;
   private audioCache = new Map<string, string>();
 
   /**
-   * Synthesize dynamic text into natural, non-distorted speech (zero robotic pitch shift).
+   * Synthesize dynamic text into natural, non-distorted speech with authentic Tamil phonetics.
    * Data URI: data:audio/mp3;base64,...
    */
-  public async synthesize(text: string, persona: VoiceGender): Promise<string | undefined> {
+  public async synthesize(
+    text: string,
+    persona: VoiceGender,
+    spokenTamil?: string
+  ): Promise<string | undefined> {
     try {
       if (!text || !text.trim()) return undefined;
 
       // Clean code blocks, URLs, markdown, and emojis for smooth natural speech
-      let cleanText = text
+      let cleanText = (spokenTamil || text)
         .replace(/```[\s\S]*?```/g, '')
         .replace(/https?:\/\/\S+/g, '')
         .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
@@ -23,6 +28,9 @@ export class NeuralVoiceService {
         .trim();
 
       if (!cleanText) return undefined;
+
+      // Automatically transliterate Tanglish to natural Tamil script if not already Tamil
+      cleanText = TamilTransliterator.toTamil(cleanText);
 
       // Limit length for conversational pacing
       if (cleanText.length > 350) {
@@ -47,15 +55,21 @@ export class NeuralVoiceService {
           // Detect if text has Tamil Unicode script
           const hasTamilScript = /[\u0B80-\u0BFF]/.test(cleanText);
 
-          // STRICT RULE: pitch is +0Hz (zero pitch distortion to prevent robotic metallic / helium sound)
-          let voice = 'en-IN-PrabhatNeural';
-          let options = { pitch: '+0Hz', rate: '+0%' };
+          let voice = 'ta-IN-ValluvarNeural';
+          let options = { pitch: '+0Hz', rate: '+4%' };
 
           if (hasTamilScript) {
-            if (persona === 'maya' || persona === 'female' || persona === 'small_boy') {
+            if (persona === 'maya' || persona === 'female') {
               voice = 'ta-IN-PallaviNeural';
-              options = { pitch: '+0Hz', rate: '+4%' };
+              options = { pitch: '+0Hz', rate: '+2%' };
+            } else if (persona === 'small_boy') {
+              voice = 'ta-IN-PallaviNeural';
+              options = { pitch: '+2Hz', rate: '+6%' };
+            } else if (persona === 'santhanam') {
+              voice = 'ta-IN-ValluvarNeural';
+              options = { pitch: '+0Hz', rate: '+8%' }; // Fast punchy comic delivery
             } else {
+              // vadivelu / male
               voice = 'ta-IN-ValluvarNeural';
               options = { pitch: '+0Hz', rate: '+4%' };
             }
@@ -84,7 +98,7 @@ export class NeuralVoiceService {
 
           const audioBuffer = await new Promise<Buffer>((resolve, reject) => {
             const timeout = setTimeout(() => {
-              try { tts.close(); } catch {}
+              try { tts.close(); } catch { }
               reject(new Error('Neural TTS timeout'));
             }, 4500);
 
@@ -94,17 +108,17 @@ export class NeuralVoiceService {
               audioStream.on('data', chunk => chunks.push(chunk));
               audioStream.on('end', () => {
                 clearTimeout(timeout);
-                try { tts.close(); } catch {}
+                try { tts.close(); } catch { }
                 resolve(Buffer.concat(chunks));
               });
               audioStream.on('error', err => {
                 clearTimeout(timeout);
-                try { tts.close(); } catch {}
+                try { tts.close(); } catch { }
                 reject(err);
               });
             } catch (e) {
               clearTimeout(timeout);
-              try { tts.close(); } catch {}
+              try { tts.close(); } catch { }
               reject(e);
             }
           });
