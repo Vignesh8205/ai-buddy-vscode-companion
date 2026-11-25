@@ -10,10 +10,23 @@ import { AudioClipsService } from './services/audioClipsService';
 import { NeuralVoiceService } from './services/neuralVoiceService';
 import { ElevenLabsService } from './services/elevenLabsService';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   console.log('AI Buddy activating with Proactive Personality & Humour Engine...');
 
   const secretStorage = new SecretStorageService(context.secrets);
+
+  // Safely migrate any plaintext keys from apikey.md to encrypted SecretStorage
+  try {
+    const migration = await secretStorage.migrateLocalFileSecretsToStorage();
+    if (migration.migratedGemini || migration.migratedElevenLabs) {
+      vscode.window.showInformationMessage(
+        'AI Buddy: API keys have been securely migrated to encrypted SecretStorage!'
+      );
+    }
+  } catch (err) {
+    console.error('[AI Buddy] Secret migration error:', err);
+  }
+
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
   const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);

@@ -25567,7 +25567,7 @@ var SecretStorageService = class _SecretStorageService {
         const content = await vscode2.workspace.fs.readFile(keyUri);
         const text = new TextDecoder().decode(content).trim();
         const firstLine = text.split(/\r?\n/)[0].trim();
-        if (firstLine && firstLine.length > 10 && !firstLine.startsWith("elevenlabs")) {
+        if (firstLine && firstLine.length > 10 && !firstLine.startsWith("elevenlabs") && !firstLine.startsWith("#")) {
           return firstLine;
         }
       }
@@ -25623,6 +25623,43 @@ var SecretStorageService = class _SecretStorageService {
   async hasElevenLabsApiKey() {
     const key = await this.getElevenLabsApiKey();
     return !!key && key.length > 0;
+  }
+  /**
+   * Safely migrates any plaintext keys from apikey.md into encrypted VS Code SecretStorage,
+   * then removes the secrets from the file for security.
+   */
+  async migrateLocalFileSecretsToStorage() {
+    let migratedGemini = false;
+    let migratedElevenLabs = false;
+    try {
+      const workspaceFolders = vscode2.workspace.workspaceFolders;
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const rootPath = workspaceFolders[0].uri;
+        const keyUri = vscode2.Uri.joinPath(rootPath, "apikey.md");
+        const content = await vscode2.workspace.fs.readFile(keyUri);
+        const text = new TextDecoder().decode(content);
+        const firstLine = text.split(/\r?\n/)[0].trim();
+        if (firstLine && firstLine.length > 10 && !firstLine.startsWith("elevenlabs") && !firstLine.startsWith("#")) {
+          await this.secretStorage.store(_SecretStorageService.KEY_NAME, firstLine);
+          migratedGemini = true;
+        }
+        const match = text.match(/elevenlabs\s*:\s*["']?([a-zA-Z0-9_-]+)/i);
+        if (match && match[1].length > 10) {
+          await this.secretStorage.store(_SecretStorageService.ELEVENLABS_KEY_NAME, match[1].trim());
+          migratedElevenLabs = true;
+        }
+        if (migratedGemini || migratedElevenLabs) {
+          const safeNotice = `# API Keys Configured Safely
+
+Your API keys have been securely stored into VS Code's encrypted OS SecretStorage (Windows Credential Manager / DPAPI).
+Plaintext keys have been removed from this file for security.
+`;
+          await vscode2.workspace.fs.writeFile(keyUri, new TextEncoder().encode(safeNotice));
+        }
+      }
+    } catch {
+    }
+    return { migratedGemini, migratedElevenLabs };
   }
 };
 
@@ -26714,9 +26751,19 @@ var ElevenLabsService = class _ElevenLabsService {
 };
 
 // src/extension/extension.ts
-function activate(context) {
+async function activate(context) {
   console.log("AI Buddy activating with Proactive Personality & Humour Engine...");
   const secretStorage = new SecretStorageService(context.secrets);
+  try {
+    const migration = await secretStorage.migrateLocalFileSecretsToStorage();
+    if (migration.migratedGemini || migration.migratedElevenLabs) {
+      vscode7.window.showInformationMessage(
+        "AI Buddy: API keys have been securely migrated to encrypted SecretStorage!"
+      );
+    }
+  } catch (err) {
+    console.error("[AI Buddy] Secret migration error:", err);
+  }
   const contextEngine = new ContextEngine();
   const personalityEngine = new PersonalityEngine();
   const geminiService = new GeminiService(secretStorage, contextEngine, personalityEngine);

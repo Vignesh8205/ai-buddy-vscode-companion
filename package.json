@@ -46,6 +46,10 @@
         "title": "AI Buddy: Set Gemini API Key"
       },
       {
+        "command": "aiBuddy.setElevenLabsApiKey",
+        "title": "AI Buddy: Set ElevenLabs Enterprise Voice API Key"
+      },
+      {
         "command": "aiBuddy.toggleVoice",
         "title": "AI Buddy: Switch Voice (Female / Male)"
       },
