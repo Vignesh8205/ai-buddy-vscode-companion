@@ -185,8 +185,9 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
           jokeReply = { text: fallback.text, emotion: fallback.emotion };
         }
 
-        // Optimization: avoid duplicate Gemini TTS call if already attempted
-        const audioData = jokeReply.audioData || (await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil));
+        // Priority 1: Real authentic character recording from trainingVoice/ (100% real human actor voice!)
+        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = realClip || jokeReply.audioData || (await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil));
         this.postMessage({
           type: 'characterReply',
           text: jokeReply.text,
@@ -252,6 +253,27 @@ export class CharacterViewProvider implements vscode.WebviewViewProvider {
         this._currentVoiceGender = message.gender;
         await config.update('voiceGender', message.gender, vscode.ConfigurationTarget.Global);
         this.postMessage({ type: 'voiceChanged', gender: message.gender });
+
+        // Play authentic actor clip immediately on persona switch if available
+        const realClip = this._getAudioClipForPersona(message.gender);
+        if (realClip) {
+          let greeting = 'Aahaa! Vandhutan da vandhutan da! Naan thaan unga Vadivelu! 😂';
+          if (message.gender === 'santhanam') {
+            greeting = 'Nanba! Naan Santhanam! Innaiku terminal-ah therikka viduvom! 😎';
+          } else if (message.gender === 'small_boy') {
+            greeting = 'Anna anna! Naan Chotu! Enna super game develop panroma? 👦';
+          } else if (message.gender === 'maya') {
+            greeting = 'Heyyy! Naan Maya! Jolly-ah code pannuvoma? 🌸';
+          }
+
+          this.postMessage({
+            type: 'characterReply',
+            text: greeting,
+            emotion: 'happy',
+            voiceGender: message.gender,
+            audioData: realClip,
+          });
+        }
         break;
       }
 

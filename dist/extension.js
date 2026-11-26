@@ -24084,7 +24084,8 @@ var CharacterViewProvider = class {
           const fallback = this._personalityEngine.getSituationalJoke(voiceGender, summary);
           jokeReply = { text: fallback.text, emotion: fallback.emotion };
         }
-        const audioData = jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil);
+        const realClip = this._getAudioClipForPersona(voiceGender);
+        const audioData = realClip || jokeReply.audioData || await this._getAudioForText(jokeReply.text, voiceGender, true, jokeReply.spokenTamil);
         this.postMessage({
           type: "characterReply",
           text: jokeReply.text,
@@ -24140,6 +24141,24 @@ var CharacterViewProvider = class {
         this._currentVoiceGender = message.gender;
         await config.update("voiceGender", message.gender, vscode.ConfigurationTarget.Global);
         this.postMessage({ type: "voiceChanged", gender: message.gender });
+        const realClip = this._getAudioClipForPersona(message.gender);
+        if (realClip) {
+          let greeting = "Aahaa! Vandhutan da vandhutan da! Naan thaan unga Vadivelu! \u{1F602}";
+          if (message.gender === "santhanam") {
+            greeting = "Nanba! Naan Santhanam! Innaiku terminal-ah therikka viduvom! \u{1F60E}";
+          } else if (message.gender === "small_boy") {
+            greeting = "Anna anna! Naan Chotu! Enna super game develop panroma? \u{1F466}";
+          } else if (message.gender === "maya") {
+            greeting = "Heyyy! Naan Maya! Jolly-ah code pannuvoma? \u{1F338}";
+          }
+          this.postMessage({
+            type: "characterReply",
+            text: greeting,
+            emotion: "happy",
+            voiceGender: message.gender,
+            audioData: realClip
+          });
+        }
         break;
       }
       case "setApiKey": {
